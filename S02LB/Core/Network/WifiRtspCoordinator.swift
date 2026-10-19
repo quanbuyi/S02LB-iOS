@@ -254,10 +254,12 @@ public final class WifiRtspCoordinator: ObservableObject {
             let host = URL(string: self.rtspUrl)?.host ?? "192.168.43.1"
             let ftpOk = await prober.probeFtp(host: host)
             
-            var rtspOk = false
+            let finalRtspOk: Bool
             if self.rtspWanted, let url = URL(string: self.rtspUrl) {
                 let rtspRes = await prober.probeRtsp(url: url)
-                rtspOk = rtspRes.isReachable
+                finalRtspOk = rtspRes.isReachable
+            } else {
+                finalRtspOk = false
             }
             
             await MainActor.run {
@@ -265,14 +267,14 @@ public final class WifiRtspCoordinator: ObservableObject {
                 guard currentToken == self.generation else { return }
                 
                 self.isFtpReady = ftpOk
-                self.isRtspReady = rtspOk
+                self.isRtspReady = finalRtspOk
                 
                 if ftpOk && !self.rtspWanted && self.phase == .waitAp {
                     self.begin(phase: .ready)
                     self.show("眼镜热点与 FTP 服务已就绪 (\(host))", isError: false)
                 }
                 
-                if rtspOk && self.rtspWanted && (self.phase == .waitAp || self.phase == .waitRtsp) {
+                if finalRtspOk && self.rtspWanted && (self.phase == .waitAp || self.phase == .waitRtsp) {
                     self.begin(phase: .streaming)
                     if self.previewWanted {
                         self.onStartPlayer?(self.rtspUrl)

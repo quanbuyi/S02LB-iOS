@@ -82,7 +82,7 @@ public struct RtspPreviewView: View {
             .background(Color.black.opacity(0.6))
             .cornerRadius(8)
             
-        case .playing(let url, let latency):
+        case .playing:
             VStack {
                 HStack {
                     HStack(spacing: 4) {
