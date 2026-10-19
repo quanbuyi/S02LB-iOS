@@ -11,6 +11,7 @@ public final class S02Logger {
     /// UI 日志监听器
     public var onLogAppended: ((String) -> Void)?
     
+    private let lock = NSLock()
     private let dateFormatter: DateFormatter = {
         let df = DateFormatter()
         df.dateFormat = "HH:mm:ss.SSS"
@@ -21,7 +22,9 @@ public final class S02Logger {
     
     public func log(_ message: String, tag: String = "S02LB") {
         guard isEnabled else { return }
+        lock.lock()
         let timeStr = dateFormatter.string(from: Date())
+        lock.unlock()
         let formatted = "[\(timeStr)] [\(tag)] \(message)"
         
         print(formatted)

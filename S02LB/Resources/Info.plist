@@ -7,13 +7,13 @@
     <key>CFBundleDisplayName</key>
     <string>S02LB 眼镜</string>
     <key>CFBundleExecutable</key>
-    <string>$(EXECUTABLE_NAME)</string>
+    <string>S02LB</string>
     <key>CFBundleIdentifier</key>
     <string>com.s02lb.app</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>$(PRODUCT_NAME)</string>
+    <string>S02LB</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -38,12 +38,6 @@
     <string>S02LB App 需要将从眼镜下载的高清照片与录像保存到系统相册中。</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>S02LB App 需要访问系统相册以保存并管理从智能眼镜导出的照片与视频。</string>
-
-    <!-- 后台蓝牙保活配置 -->
-    <key>UIBackgroundModes</key>
-    <array>
-        <string>bluetooth-central</string>
-    </array>
 
     <key>UILaunchScreen</key>
     <dict/>
