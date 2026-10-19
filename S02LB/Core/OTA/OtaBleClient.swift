@@ -117,10 +117,13 @@ public final class OtaBleClient: ObservableObject {
         
         currentChunkOffset += UInt32(len)
         let percent = Double(currentChunkOffset) / Double(total)
+        let offsetKb = currentChunkOffset / 1024
+        let totalKb = total / 1024
         
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
             self.progress = percent
-            self.progressDetail = String(format: "已传输 %.1f%% (%d / %d KB)", percent * 100, currentChunkOffset / 1024, total / 1024)
+            self.progressDetail = String(format: "已传输 %.1f%% (%d / %d KB)", percent * 100, offsetKb, totalKb)
         }
     }
     
@@ -139,7 +142,8 @@ public final class OtaBleClient: ObservableObject {
         let pkt = OtaProtocol.packet(opcode: .reboot, data: OtaProtocol.cmdReboot(sn: nextSn(), type: 0))
         bleManager.otaSend(data: pkt)
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self = self else { return }
             self.state = .done
             self.progress = 1.0
             self.progressDetail = "升级成功！设备已重启"
