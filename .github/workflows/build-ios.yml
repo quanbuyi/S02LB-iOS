@@ -79,6 +79,19 @@ jobs:
           fi
           echo "Found app at: $APP_PATH"
           cp -r "$APP_PATH" Payload/
+
+          # 强制注入蓝牙与外设访问隐私描述，避免任何构建器重写导致缺失崩溃
+          PLIST="Payload/S02LB.app/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :NSBluetoothAlwaysUsageDescription 'S02LB App 需要使用蓝牙扫描、连接并控制智能眼镜设备，下发拍照录像与配置指令。'" "$PLIST" || /usr/libexec/PlistBuddy -c "Add :NSBluetoothAlwaysUsageDescription string 'S02LB App 需要使用蓝牙扫描、连接并控制智能眼镜设备，下发拍照录像与配置指令。'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :NSBluetoothPeripheralUsageDescription 'S02LB App 需要使用低功耗蓝牙与智能眼镜进行控制指令与状态交互。'" "$PLIST" || /usr/libexec/PlistBuddy -c "Add :NSBluetoothPeripheralUsageDescription string 'S02LB App 需要使用低功耗蓝牙与智能眼镜进行控制指令与状态交互。'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :NSLocalNetworkUsageDescription 'S02LB App 需要访问本地网络以连接智能眼镜 WiFi 热点，实现低延迟实时视频流预览及媒体文件下载。'" "$PLIST" || /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 'S02LB App 需要访问本地网络以连接智能眼镜 WiFi 热点，实现低延迟实时视频流预览及媒体文件下载。'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryAddUsageDescription 'S02LB App 需要将从眼镜下载的高清照片与录像保存到系统相册中。'" "$PLIST" || /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryAddUsageDescription string 'S02LB App 需要将从眼镜下载的高清照片与录像保存到系统相册中。'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryUsageDescription 'S02LB App 需要访问系统相册以保存并管理从智能眼镜导出的照片与视频。'" "$PLIST" || /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string 'S02LB App 需要访问系统相册以保存并管理从智能眼镜导出的照片与视频。'" "$PLIST"
+
+          echo "====================== 验证打包后的 Info.plist ======================"
+          plutil -p "$PLIST"
+          echo "===================================================================="
+
           zip -r S02LB.ipa Payload
           echo "IPA created successfully"
 

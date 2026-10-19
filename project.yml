@@ -14,6 +14,18 @@ targets:
       - path: S02LB/Modules
     info:
       path: S02LB/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: "S02LB 眼镜"
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        NSBluetoothAlwaysUsageDescription: "S02LB App 需要使用蓝牙扫描、连接并控制智能眼镜设备，下发拍照录像与配置指令。"
+        NSBluetoothPeripheralUsageDescription: "S02LB App 需要使用低功耗蓝牙与智能眼镜进行控制指令与状态交互。"
+        NSLocalNetworkUsageDescription: "S02LB App 需要访问本地网络以连接智能眼镜 WiFi 热点，实现低延迟实时视频流预览及媒体文件下载。"
+        NSPhotoLibraryAddUsageDescription: "S02LB App 需要将从眼镜下载的高清照片与录像保存到系统相册中。"
+        NSPhotoLibraryUsageDescription: "S02LB App 需要访问系统相册以保存并管理从智能眼镜导出的照片与视频。"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.s02lb.app
