@@ -1,0 +1,64 @@
+name: Build S02LB iOS IPA
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build iOS IPA
+    runs-on: macos-14
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Determine Project Directory
+        id: dir
+        run: |
+          if [ -f "project.yml" ]; then
+            echo "path=." >> $GITHUB_OUTPUT
+          elif [ -f "ios/project.yml" ]; then
+            echo "path=ios" >> $GITHUB_OUTPUT
+          else
+            echo "project.yml not found!" && exit 1
+          fi
+
+      - name: Generate Xcode Project
+        working-directory: ${{ steps.dir.outputs.path }}
+        run: |
+          xcodegen generate
+
+      - name: Build iOS Application (.app)
+        working-directory: ${{ steps.dir.outputs.path }}
+        run: |
+          xcodebuild build \
+            -project S02LB.xcodeproj \
+            -scheme S02LB \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Package into IPA
+        working-directory: ${{ steps.dir.outputs.path }}
+        run: |
+          mkdir -p Payload
+          APP_PATH=$(find build -name "S02LB.app" -type d | head -n 1)
+          echo "Found app at: $APP_PATH"
+          cp -r "$APP_PATH" Payload/
+          zip -r S02LB.ipa Payload
+          echo "IPA created successfully"
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: S02LB-iOS-IPA
+          path: ${{ steps.dir.outputs.path }}/S02LB.ipa
+          retention-days: 7

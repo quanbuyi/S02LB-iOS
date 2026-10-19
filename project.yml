@@ -1,0 +1,26 @@
+name: S02LB
+options:
+  bundleIdPrefix: com.s02lb
+  deploymentTarget:
+    iOS: "15.0"
+targets:
+  S02LB:
+    type: application
+    platform: iOS
+    sources:
+      - path: S02LB
+    info:
+      path: S02LB/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: S02LB 眼镜
+        CFBundleShortVersionString: 1.0.0
+        CFBundleVersion: 1
+    entitlements:
+      path: S02LB/Resources/S02LB.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.s02lb.app
+        INFOPLIST_FILE: S02LB/Resources/Info.plist
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
