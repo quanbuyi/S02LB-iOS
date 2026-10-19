@@ -210,10 +210,12 @@ public final class WifiRtspCoordinator: ObservableObject {
             bleManager.send(command: .setWifiOn)
             
             // 如果已知 SSID 且当前未连上 Wi-Fi，尝试自动加入
-            if !targetSSID.isEmpty && !hotspotManager.isWifiActive && !hotspotManager.isConnectingHotspot {
+            let ssid = self.targetSSID
+            let pass = self.targetPassword
+            if !ssid.isEmpty && !hotspotManager.isWifiActive && !hotspotManager.isConnectingHotspot {
                 Task {
                     do {
-                        try await self.hotspotManager.connectToHotspot(ssid: self.targetSSID, passphrase: self.targetPassword)
+                        try await self.hotspotManager.connectToHotspot(ssid: ssid, passphrase: pass)
                     } catch {
                         S02Logger.shared.log("自动关联热点重试: \(error.localizedDescription)", tag: "WiFiFlow")
                     }
@@ -249,13 +251,15 @@ public final class WifiRtspCoordinator: ObservableObject {
         guard !isProbing, hotspotManager.isWifiActive else { return }
         isProbing = true
         let currentToken = generation
+        let currentUrl = self.rtspUrl
+        let wanted = self.rtspWanted
         
         Task {
-            let host = URL(string: self.rtspUrl)?.host ?? "192.168.43.1"
+            let host = URL(string: currentUrl)?.host ?? "192.168.43.1"
             let ftpOk = await prober.probeFtp(host: host)
             
             let finalRtspOk: Bool
-            if self.rtspWanted, let url = URL(string: self.rtspUrl) {
+            if wanted, let url = URL(string: currentUrl) {
                 let rtspRes = await prober.probeRtsp(url: url)
                 finalRtspOk = rtspRes.isReachable
             } else {
@@ -269,15 +273,15 @@ public final class WifiRtspCoordinator: ObservableObject {
                 self.isFtpReady = ftpOk
                 self.isRtspReady = finalRtspOk
                 
-                if ftpOk && !self.rtspWanted && self.phase == .waitAp {
+                if ftpOk && !wanted && self.phase == .waitAp {
                     self.begin(phase: .ready)
                     self.show("眼镜热点与 FTP 服务已就绪 (\(host))", isError: false)
                 }
                 
-                if finalRtspOk && self.rtspWanted && (self.phase == .waitAp || self.phase == .waitRtsp) {
+                if finalRtspOk && wanted && (self.phase == .waitAp || self.phase == .waitRtsp) {
                     self.begin(phase: .streaming)
                     if self.previewWanted {
-                        self.onStartPlayer?(self.rtspUrl)
+                        self.onStartPlayer?(currentUrl)
                     }
                 }
             }
