@@ -411,10 +411,12 @@ extension BleManager: CBPeripheralDelegate {
             }
         }
         
+        let biz = foundBiz
+        let ota = foundOta
         DispatchQueue.main.async {
-            self.hasBizService = foundBiz
-            self.hasOtaService = foundOta
-            self.servicesSummary = "业务通道 0xAE00: \(foundBiz ? "✓ 就绪" : "✗ 缺失") | OTA 通道 0x7033: \(foundOta ? "✓ 就绪" : "✗ 缺失")"
+            self.hasBizService = biz
+            self.hasOtaService = ota
+            self.servicesSummary = "业务通道 0xAE00: \(biz ? "✓ 就绪" : "✗ 缺失") | OTA 通道 0x7033: \(ota ? "✓ 就绪" : "✗ 缺失")"
             self.log("[自检] \(self.servicesSummary)")
         }
     }

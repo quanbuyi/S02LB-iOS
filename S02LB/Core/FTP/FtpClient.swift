@@ -64,17 +64,15 @@ public final class FtpClient {
         self.controlConnection = connection
         
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            var hasResumed = false
+            let guardObj = ContinuationGuard()
             connection.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    if !hasResumed {
-                        hasResumed = true
+                    guardObj.runOnce {
                         continuation.resume()
                     }
                 case .failed(let err):
-                    if !hasResumed {
-                        hasResumed = true
+                    guardObj.runOnce {
                         continuation.resume(throwing: FtpError.connectionFailed(err.localizedDescription))
                     }
                 default:
@@ -336,17 +334,15 @@ public final class FtpClient {
         let dataConn = NWConnection(to: endpoint, using: .tcp)
         
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            var hasResumed = false
+            let guardObj = ContinuationGuard()
             dataConn.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    if !hasResumed {
-                        hasResumed = true
+                    guardObj.runOnce {
                         continuation.resume()
                     }
                 case .failed(let err):
-                    if !hasResumed {
-                        hasResumed = true
+                    guardObj.runOnce {
                         continuation.resume(throwing: FtpError.connectionFailed(err.localizedDescription))
                     }
                 default:
@@ -365,9 +361,9 @@ public final class FtpClient {
                 connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, isComplete, error in
                     if let err = error {
                         continuation.resume(throwing: err)
-                    } else if let d = data {
+                    } else if let d = data, !d.isEmpty {
                         continuation.resume(returning: d)
-                    } else if isComplete {
+                    } else {
                         continuation.resume(returning: Data())
                     }
                 }
@@ -387,9 +383,9 @@ public final class FtpClient {
                 connection.receive(minimumIncompleteLength: 1, maximumLength: 16384) { data, _, isComplete, error in
                     if let err = error {
                         continuation.resume(throwing: err)
-                    } else if let d = data {
+                    } else if let d = data, !d.isEmpty {
                         continuation.resume(returning: d)
-                    } else if isComplete {
+                    } else {
                         continuation.resume(returning: Data())
                     }
                 }

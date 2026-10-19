@@ -25,11 +25,10 @@ public final class NetworkServiceProber {
         
         return await withCheckedContinuation { continuation in
             let queue = DispatchQueue(label: "com.s02lb.probe.ftp")
-            var hasResumed = false
+            let guardObj = ContinuationGuard()
             
             let finish: (Bool) -> Void = { result in
-                if !hasResumed {
-                    hasResumed = true
+                guardObj.runOnce {
                     connection.cancel()
                     continuation.resume(returning: result)
                 }
@@ -80,11 +79,10 @@ public final class NetworkServiceProber {
         
         return await withCheckedContinuation { continuation in
             let queue = DispatchQueue(label: "com.s02lb.probe.rtsp")
-            var hasResumed = false
+            let guardObj = ContinuationGuard()
             
             let finish: (ProbeResult) -> Void = { result in
-                if !hasResumed {
-                    hasResumed = true
+                guardObj.runOnce {
                     connection.cancel()
                     continuation.resume(returning: result)
                 }

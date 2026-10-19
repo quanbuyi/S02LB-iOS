@@ -96,11 +96,11 @@ public final class PhotoLibraryManager {
         }
         
         // 创建新相册
-        var albumPlaceholder: PHObjectPlaceholder?
+        let box = PlaceholderBox()
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             PHPhotoLibrary.shared().performChanges({
                 let request = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: self.albumName)
-                albumPlaceholder = request.placeholderForCreatedAssetCollection
+                box.placeholder = request.placeholderForCreatedAssetCollection
             }, completionHandler: { success, error in
                 if success {
                     continuation.resume()
@@ -110,10 +110,14 @@ public final class PhotoLibraryManager {
             })
         }
         
-        if let placeholder = albumPlaceholder {
+        if let placeholder = box.placeholder {
             let res = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [placeholder.localIdentifier], options: nil)
             return res.firstObject
         }
         return nil
     }
+}
+
+private final class PlaceholderBox: @unchecked Sendable {
+    var placeholder: PHObjectPlaceholder?
 }
