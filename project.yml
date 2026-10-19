@@ -8,19 +8,19 @@ targets:
     type: application
     platform: iOS
     sources:
-      - path: S02LB
+      - path: S02LB/App
+      - path: S02LB/Core
+      - path: S02LB/Modules
     info:
       path: S02LB/Resources/Info.plist
-      properties:
-        CFBundleDisplayName: S02LB 眼镜
-        CFBundleShortVersionString: 1.0.0
-        CFBundleVersion: 1
-    entitlements:
-      path: S02LB/Resources/S02LB.entitlements
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.s02lb.app
         INFOPLIST_FILE: S02LB/Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Manual
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGN_IDENTITY: ""
+        AD_HOC_CODE_SIGNING_ALLOWED: YES
+        SWIFT_VERSION: "5.0"

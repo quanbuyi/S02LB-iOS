@@ -35,7 +35,7 @@ jobs:
       - name: Build iOS Application (.app)
         working-directory: ${{ steps.dir.outputs.path }}
         run: |
-          xcodebuild build \
+          xcodebuild clean build \
             -project S02LB.xcodeproj \
             -scheme S02LB \
             -configuration Release \
@@ -44,13 +44,20 @@ jobs:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=""
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_ENTITLEMENTS=""
 
       - name: Package into IPA
         working-directory: ${{ steps.dir.outputs.path }}
         run: |
           mkdir -p Payload
           APP_PATH=$(find build -name "S02LB.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: S02LB.app not found!"
+            find build
+            exit 1
+          fi
           echo "Found app at: $APP_PATH"
           cp -r "$APP_PATH" Payload/
           zip -r S02LB.ipa Payload
