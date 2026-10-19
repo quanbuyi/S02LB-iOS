@@ -1,45 +1,44 @@
 import Foundation
 import Combine
 
-/// S02LB FTP 媒体文件浏览与下载 ViewModel
+/// S02LB 媒体文件相册与 FTP 下载 ViewModel
+@MainActor
 public final class FtpMediaViewModel: ObservableObject {
     
-    @Published public private(set) var files: [String] = []
-    @Published public private(set) var isLoading: Bool = false
-    @Published public private(set) var isDownloading: Bool = false
-    @Published public private(set) var currentDownloadingFile: String? = nil
-    @Published public private(set) var downloadProgress: Double = 0.0
-    @Published public private(set) var downloadStatusText: String = ""
-    @Published public private(set) var savedFiles: Set<String> = []
+    @Published public var files: [String] = []
+    @Published public var isLoading: Bool = false
     @Published public var errorMessage: String? = nil
+    
+    @Published public var isDownloading: Bool = false
+    @Published public var downloadProgress: Double = 0.0
+    @Published public var downloadStatusText: String = ""
+    @Published public var currentDownloadingFile: String? = nil
+    @Published public var savedFiles: Set<String> = []
     
     private let ftpClient = FtpClient()
     private let photoManager = PhotoLibraryManager.shared
     
     public init() {}
     
-    /// 刷新媒体文件列表
+    /// 刷新眼镜文件列表
     public func refreshFileList(host: String = "192.168.43.1") {
         guard !isLoading else { return }
         
         self.isLoading = true
         self.errorMessage = nil
         
-        Task {
+        Task { [weak self] in
+            guard let self = self else { return }
             do {
-                try await ftpClient.connect(host: host)
-                let list = try await ftpClient.listMediaFiles()
-                await MainActor.run {
-                    self.files = list
-                    self.isLoading = false
-                    S02Logger.shared.log("成功刷新文件列表，共 \(list.count) 项", tag: "FTPMedia")
-                }
+                try await self.ftpClient.connect(host: host)
+                let list = try await self.ftpClient.listMediaFiles()
+                self.files = list
+                self.isLoading = false
+                S02Logger.shared.log("成功刷新文件列表，共 \(list.count) 项", tag: "FTPMedia")
             } catch {
-                await MainActor.run {
-                    self.isLoading = false
-                    self.errorMessage = "读取文件列表失败: \(error.localizedDescription)"
-                    S02Logger.shared.log("刷新文件列表错误: \(error.localizedDescription)", tag: "FTPMedia")
-                }
+                self.isLoading = false
+                self.errorMessage = "读取文件列表失败: \(error.localizedDescription)"
+                S02Logger.shared.log("刷新文件列表错误: \(error.localizedDescription)", tag: "FTPMedia")
             }
         }
     }
@@ -59,42 +58,38 @@ public final class FtpMediaViewModel: ObservableObject {
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         let localFile = tempDir.appendingPathComponent(filename)
         
-        Task {
+        Task { [weak self] in
+            guard let self = self else { return }
             do {
-                try await ftpClient.connect(host: host)
+                try await self.ftpClient.connect(host: host)
                 
-                let downloadedURL = try await ftpClient.download(remotePath: remotePath, to: localFile) { [weak self] transferred, total, percent in
-                    DispatchQueue.main.async {
-                        self?.downloadProgress = percent
+                let downloadedURL = try await self.ftpClient.download(remotePath: remotePath, to: localFile) { [weak self] transferred, total, percent in
+                    Task { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        self.downloadProgress = percent
                         if total > 0 {
                             let currMB = Double(transferred) / (1024 * 1024)
                             let totalMB = Double(total) / (1024 * 1024)
-                            self?.downloadStatusText = String(format: "%.1f%% (%.1f / %.1f MB)", percent * 100, currMB, totalMB)
+                            self.downloadStatusText = String(format: "%.1f%% (%.1f / %.1f MB)", percent * 100, currMB, totalMB)
                         } else {
-                            self?.downloadStatusText = "已接收 \(transferred / 1024) KB"
+                            self.downloadStatusText = "已接收 \(transferred / 1024) KB"
                         }
                     }
                 }
                 
-                await MainActor.run {
-                    self.downloadStatusText = "正在保存到系统相册..."
-                }
+                self.downloadStatusText = "正在保存到系统相册..."
                 
                 // 保存至系统相册
-                try await photoManager.saveMedia(fileURL: downloadedURL)
+                try await self.photoManager.saveMedia(fileURL: downloadedURL)
                 
-                await MainActor.run {
-                    self.savedFiles.insert(remotePath)
-                    self.isDownloading = false
-                    self.currentDownloadingFile = nil
-                    self.downloadStatusText = "已成功保存到系统相册！"
-                }
+                self.savedFiles.insert(remotePath)
+                self.isDownloading = false
+                self.currentDownloadingFile = nil
+                self.downloadStatusText = "已成功保存到系统相册！"
             } catch {
-                await MainActor.run {
-                    self.isDownloading = false
-                    self.currentDownloadingFile = nil
-                    self.errorMessage = "下载/保存失败: \(error.localizedDescription)"
-                }
+                self.isDownloading = false
+                self.currentDownloadingFile = nil
+                self.errorMessage = "下载/保存失败: \(error.localizedDescription)"
             }
         }
     }

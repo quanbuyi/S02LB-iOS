@@ -3,6 +3,7 @@ import Combine
 import CoreBluetooth
 
 /// S02LB 主界面 ViewModel
+@MainActor
 public final class MainDeviceViewModel: ObservableObject {
     
     // MARK: - 核心服务引用
