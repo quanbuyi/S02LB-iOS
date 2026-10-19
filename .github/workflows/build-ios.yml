@@ -31,6 +31,16 @@ jobs:
         working-directory: ${{ steps.dir.outputs.path }}
         run: |
           xcodegen generate
+          python3 -c "
+          import re
+          p = 'S02LB.xcodeproj/project.pbxproj'
+          with open(p, 'r') as f:
+              c = f.read()
+          c = re.sub(r'objectVersion = \d+;', 'objectVersion = 60;', c)
+          with open(p, 'w') as f:
+              f.write(c)
+          print('Successfully patched objectVersion to 60 for Xcode 15.4 compatibility')
+          "
 
       - name: Build iOS Application (.app)
         working-directory: ${{ steps.dir.outputs.path }}
