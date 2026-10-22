@@ -20,6 +20,7 @@ public final class HotspotManager: ObservableObject {
     @Published public private(set) var isConnectingHotspot: Bool = false
     @Published public private(set) var lastError: String? = nil
     
+    private var currentConnectingSSID: String? = nil
     private let pathMonitor = NWPathMonitor(requiredInterfaceType: .wifi)
     private let monitorQueue = DispatchQueue(label: "com.s02lb.hotspot.monitor")
     
@@ -56,8 +57,15 @@ public final class HotspotManager: ObservableObject {
             throw NSError(domain: "HotspotManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "SSID 不能为空"])
         }
         
+        // 防重复重入：若正在连接同名热点，直接等待或跳过
+        if isConnectingHotspot, currentConnectingSSID == ssid {
+            S02Logger.shared.log("热点关联已在进行中，跳过重复请求: \(ssid)", tag: "Hotspot")
+            return
+        }
+        
         await MainActor.run {
             self.isConnectingHotspot = true
+            self.currentConnectingSSID = ssid
             self.lastError = nil
         }
         
@@ -76,6 +84,7 @@ public final class HotspotManager: ObservableObject {
                 guard let self = self else { return }
                 DispatchQueue.main.async {
                     self.isConnectingHotspot = false
+                    self.currentConnectingSSID = nil
                     if let error = error {
                         let nsErr = error as NSError
                         // NEHotspotConfigurationError.alreadyAssociated (code 13) 表示已经连接在当前热点
@@ -86,7 +95,7 @@ public final class HotspotManager: ObservableObject {
                             return
                         }
                         
-                        let msg = self.formatErrorDescription(nsErr)
+                        let msg = self.formatErrorDescription(nsErr, ssid: ssid)
                         S02Logger.shared.log("加入 Wi-Fi 失败: \(msg) (rawCode: \(nsErr.code))", tag: "Hotspot")
                         self.lastError = msg
                         continuation.resume(throwing: error)
@@ -100,21 +109,21 @@ public final class HotspotManager: ObservableObject {
         }
     }
     
-    private func formatErrorDescription(_ nsErr: NSError) -> String {
+    private func formatErrorDescription(_ nsErr: NSError, ssid: String = "") -> String {
         if nsErr.domain == NEHotspotConfigurationErrorDomain {
             switch nsErr.code {
             case 1:
                 return "用户取消了加入热点"
             case 7:
-                return "未扫描到热点广播，眼镜硬件可能正在启动中"
+                return "未扫描到热点广播 [\(ssid)]，眼镜硬件可能正在启动中"
             case 8:
-                return "系统配置内部错误（请检查 HotspotConfiguration 权限）"
+                return "系统配置内部错误 (Code 8: 需付费开发者签名或TrollStore，请在系统 Wi-Fi 中手动连接【\(ssid)】)"
             case 13:
                 return "已关联到该热点"
             case 14:
                 return "申请加入超时，请确认眼镜热点是否在广播"
             default:
-                return "加入失败: \(nsErr.localizedDescription) (code: \(nsErr.code))"
+                return "系统加入失败: \(nsErr.localizedDescription) (code: \(nsErr.code))"
             }
         }
         return nsErr.localizedDescription

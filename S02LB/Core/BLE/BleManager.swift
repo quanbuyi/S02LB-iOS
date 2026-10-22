@@ -57,6 +57,21 @@ public final class BleManager: NSObject, ObservableObject {
         self.centralManager = CBCentralManager(delegate: self, queue: queue)
         
         setupPacketParser()
+        setupLoggerBridge()
+    }
+    
+    private func setupLoggerBridge() {
+        S02Logger.shared.onLogAppended = { [weak self] formatted in
+            guard AppConfig.enableInteractionLog else { return }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.logMessages.append(formatted)
+                if self.logMessages.count > 300 {
+                    self.logMessages.removeFirst(50)
+                }
+                self.delegate?.bleManager(self, didLog: formatted)
+            }
+        }
     }
     
     private func setupPacketParser() {
@@ -78,16 +93,8 @@ public final class BleManager: NSObject, ObservableObject {
     }
     
     // MARK: - 统一日志记录
-    private func log(_ message: String) {
-        S02Logger.shared.log(message, tag: "BleManager")
-        guard AppConfig.enableInteractionLog else { return }
-        DispatchQueue.main.async {
-            self.logMessages.append(message)
-            if self.logMessages.count > 300 {
-                self.logMessages.removeFirst(50)
-            }
-            self.delegate?.bleManager(self, didLog: message)
-        }
+    private func log(_ message: String, tag: String = "BleManager") {
+        S02Logger.shared.log(message, tag: tag)
     }
     
     // MARK: - 扫描控制

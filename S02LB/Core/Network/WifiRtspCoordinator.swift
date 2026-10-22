@@ -9,7 +9,8 @@ import Network
 /// 2. 状态机驱动：AP 就绪 -> 端口可达性探测 -> RTSP 启动 -> DESCRIBE 校验 -> 释放回收；
 /// 3. 设备多媒体互斥管理：严格遵守硬件互斥规则（RTSP 推流中禁止拍照/录像/格式化）；
 /// 4. 严密跟踪设备 RTSP_STOP 序列号确认，避免盲目切断导致固件死锁或重启；
-/// 5. 严格实施重试间隔退避（8秒）与重试上限（最多4次），彻底杜绝命令风暴打死固件。
+/// 5. 严格实施重试退避（8秒）与重试上限（最多4次），彻底杜绝命令风暴；
+/// 6. 精准捕捉固件 `wifi_on == 1` 就绪事件，在热点硬件广播真正启动后发起连接，避免并发竞争。
 public final class WifiRtspCoordinator: ObservableObject {
     
     public enum Phase: String {
@@ -37,6 +38,7 @@ public final class WifiRtspCoordinator: ObservableObject {
     // 当前推导出的热点名称与密码（供 UI 展示与手动连接备用）
     @Published public private(set) var currentTargetSSID: String = ""
     @Published public private(set) var currentTargetPassword: String = "12345678"
+    @Published public private(set) var isHotspotHardwareReady: Bool = false
     
     // MARK: - 回调
     public var onStartPlayer: ((String) -> Void)?
@@ -73,6 +75,7 @@ public final class WifiRtspCoordinator: ObservableObject {
     private var nextStartDate: Date = Date.distantPast
     private var nextStopDate: Date = Date.distantPast
     private var deadlineDate: Date = Date.distantFuture
+    private var hotspotJoinAttemptedForCurrentSession: Bool = false
     
     private var generation: Int64 = 0
     private var timer: AnyCancellable?
@@ -115,7 +118,10 @@ public final class WifiRtspCoordinator: ObservableObject {
             .sink { [weak self] isActive in
                 guard let self = self else { return }
                 self.isWifiConnected = isActive
-                if !isActive && (self.phase == .streaming || self.phase == .ready) {
+                if isActive {
+                    S02Logger.shared.log("检测到手机已接入 Wi-Fi 网络，触发端口服务探测...", tag: "WiFiFlow")
+                    self.triggerServiceProbe()
+                } else if self.phase == .streaming || self.phase == .ready {
                     self.show("Wi-Fi 已断开，等待重新连接...", isError: true)
                 }
             }
@@ -260,6 +266,8 @@ public final class WifiRtspCoordinator: ObservableObject {
         wifiSends = 0
         startSends = 0
         stopSends = 0
+        isHotspotHardwareReady = false
+        hotspotJoinAttemptedForCurrentSession = false
         deadlineDate = Date.distantFuture
         onStopPlayer?()
         show("未开启", isError: false)
@@ -277,6 +285,7 @@ public final class WifiRtspCoordinator: ObservableObject {
         self.nextWifiDate = now
         self.nextStartDate = now
         self.nextStopDate = now
+        self.hotspotJoinAttemptedForCurrentSession = false
         S02Logger.shared.log("状态机切换 -> \(target.rawValue)", tag: "WiFiFlow")
     }
     
@@ -342,24 +351,31 @@ public final class WifiRtspCoordinator: ObservableObject {
                 bleManager.send(command: .setWifiOn)
             }
             
-            if !ssid.isEmpty {
-                show("已请求开启热点 [\(ssid)]，等待广播并连接...", isError: false)
-                
-                // 如果已知 SSID 且当前未接入 Wi-Fi，尝试通过 NEHotspotConfiguration 自动关联
-                if !hotspotManager.isWifiActive && !hotspotManager.isConnectingHotspot {
-                    Task {
-                        // 预热 2.5 秒，给硬件 309 hostapd 留出广播时间
-                        try? await Task.sleep(nanoseconds: 2_500_000_000)
-                        guard self.phase == .waitAp, !self.hotspotManager.isWifiActive else { return }
-                        do {
-                            try await self.hotspotManager.connectToHotspot(ssid: ssid, passphrase: pass)
-                        } catch {
-                            S02Logger.shared.log("自动关联热点: \(error.localizedDescription)", tag: "WiFiFlow")
+            if isHotspotHardwareReady {
+                if !hotspotManager.isWifiActive {
+                    show("眼镜热点已就绪 [\(ssid)]！若未自动加入，请在系统 Wi-Fi 中连接该热点", isError: false)
+                    
+                    // 仅在首次检测到硬件 AP 就绪时，触发一次系统自动关联，杜绝 Task 竞争
+                    if !hotspotJoinAttemptedForCurrentSession, !hotspotManager.isConnectingHotspot {
+                        hotspotJoinAttemptedForCurrentSession = true
+                        S02Logger.shared.log("检测到硬件 AP 已就绪，触发自动加入热点: \(ssid)", tag: "WiFiFlow")
+                        Task {
+                            do {
+                                try await self.hotspotManager.connectToHotspot(ssid: ssid, passphrase: pass)
+                            } catch {
+                                S02Logger.shared.log("自动关联热点结果: \(error.localizedDescription)", tag: "WiFiFlow")
+                            }
                         }
                     }
+                } else {
+                    show("已成功接入 Wi-Fi [\(ssid)]，正在探测相机服务...", isError: false)
                 }
             } else {
-                show("已下发开启 WiFi，正在获取热点广播配置...", isError: false)
+                if !ssid.isEmpty {
+                    show("已下发开启命令，等待眼镜热点广播就绪 (目标: \(ssid))...", isError: false)
+                } else {
+                    show("已下发开启 WiFi，正在获取热点广播配置...", isError: false)
+                }
             }
             
             // 触发服务可达性探测
@@ -436,7 +452,7 @@ public final class WifiRtspCoordinator: ObservableObject {
     // MARK: - 处理 BLE 上报信息
     
     private func handleBleReport(_ report: S02LbReport) {
-        // 提取 Wi-Fi SSID 与密码 (只有合法有效时才更新)
+        // 1. 提取 Wi-Fi SSID 与密码 (只有合法有效时才更新)
         if let ssid = report.wifiSSID, !ssid.isEmpty, ssid != "-", ssid != "0" {
             if targetSSID != ssid {
                 targetSSID = ssid
@@ -446,7 +462,29 @@ public final class WifiRtspCoordinator: ObservableObject {
             }
         }
         
-        // 解析 RTSP 停止结果
+        // 2. 监测硬件 AP 就绪状态
+        let wasReady = self.isHotspotHardwareReady
+        let isNowReady = report.isWifiApReady
+        self.isHotspotHardwareReady = isNowReady
+        
+        if isNowReady && !wasReady {
+            S02Logger.shared.log("★ 眼镜 Wi-Fi 硬件广播已就绪！SSID=\(self.resolvedSSID), wifi_on=\(report.wifiOn)", tag: "WiFiFlow")
+            // 若当前处于 waitAp 状态且尚未接入，立即尝试一次加入
+            if phase == .waitAp, !hotspotManager.isWifiActive, !hotspotJoinAttemptedForCurrentSession {
+                hotspotJoinAttemptedForCurrentSession = true
+                let s = self.resolvedSSID
+                let p = self.resolvedPassword
+                Task {
+                    do {
+                        try await self.hotspotManager.connectToHotspot(ssid: s, passphrase: p)
+                    } catch {
+                        S02Logger.shared.log("自动关联热点: \(error.localizedDescription)", tag: "WiFiFlow")
+                    }
+                }
+            }
+        }
+        
+        // 3. 解析 RTSP 停止结果
         if report.rtspStopSequence >= 0 {
             let seq = report.rtspStopSequence
             let res = report.rtspStopResult

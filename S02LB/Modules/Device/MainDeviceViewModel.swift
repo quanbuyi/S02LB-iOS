@@ -98,6 +98,10 @@ public final class MainDeviceViewModel: ObservableObject {
     }
     
     public func openSystemWifiSettings() {
+        let pw = coordinator.currentTargetPassword
+        let ssid = coordinator.currentTargetSSID
+        UIPasteboard.general.string = pw
+        notify("热点密码已自动复制 (\(pw))，请在系统 Wi-Fi 列表中选择【\(ssid.isEmpty ? "眼镜热点" : ssid)】连接")
         hotspot.openSystemWifiSettings()
     }
     

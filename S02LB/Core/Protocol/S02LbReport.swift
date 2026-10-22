@@ -33,6 +33,7 @@ public struct S02LbReport {
     public var record: String = "-"
     public var buzzer: String = "-"
     public var wifi: String = "-"
+    public var wifiOn: Int = -1        // 0=未开启, 1=已开启, -1=未知
     public var key: String = "-"
     public var rtsp: String = "-"
     
@@ -87,6 +88,16 @@ public struct S02LbReport {
         return wifiSSID != nil
     }
     
+    /// 热点是否已真正开启就绪并正在发射广播 (wifi_on == 1 或 wifi 字段后缀为 1)
+    public var isWifiApReady: Bool {
+        if wifiOn == 1 { return true }
+        let parts = wifi.split(separator: ",", omittingEmptySubsequences: false)
+        if parts.count >= 3 && parts[2].trimmingCharacters(in: .whitespaces) == "1" {
+            return true
+        }
+        return false
+    }
+    
     public var isStatusReport: Bool {
         return raw.contains("\"soc\"") || raw.contains("\"size\"") || raw.contains("\"mac\"")
     }
@@ -117,6 +128,11 @@ public struct S02LbReport {
             self.record  = S02LbReport.extractValue(from: obj, key: "record")
             self.buzzer  = S02LbReport.extractValue(from: obj, key: "buzzer")
             self.wifi    = S02LbReport.extractValue(from: obj, key: "wifi")
+            if let wo = obj["wifi_on"] as? Int {
+                self.wifiOn = wo
+            } else if let woStr = obj["wifi_on"] as? String, let wo = Int(woStr) {
+                self.wifiOn = wo
+            }
             self.key     = S02LbReport.extractValue(from: obj, key: "key")
             self.rtsp    = S02LbReport.extractValue(from: obj, key: "rtsp")
             parsedSuccessfully = true
@@ -136,6 +152,8 @@ public struct S02LbReport {
             self.record  = S02LbReport.regexExtract(from: rawJson, key: "record")
             self.buzzer  = S02LbReport.regexExtract(from: rawJson, key: "buzzer")
             self.wifi    = S02LbReport.regexExtract(from: rawJson, key: "wifi")
+            let woStr    = S02LbReport.regexExtract(from: rawJson, key: "wifi_on")
+            self.wifiOn  = Int(woStr) ?? -1
             self.key     = S02LbReport.regexExtract(from: rawJson, key: "key")
             self.rtsp    = S02LbReport.regexExtract(from: rawJson, key: "rtsp")
         }

@@ -216,41 +216,56 @@ public struct MainDeviceView: View {
                 
                 // 目标热点信息与辅助按钮 (支持一键复制密码与跳转系统设置)
                 if !coordinator.currentTargetSSID.isEmpty {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("目标热点: \(coordinator.currentTargetSSID)")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                            Text("默认密码: \(coordinator.currentTargetPassword)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Button(action: {
-                            viewModel.copyWifiPassword()
-                        }) {
-                            Text("复制密码")
-                                .font(.caption2)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(Color.blue.opacity(0.1))
-                                .cornerRadius(4)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(coordinator.isHotspotHardwareReady ? Color.green : Color.orange)
+                                        .frame(width: 6, height: 6)
+                                    Text("热点名称: \(coordinator.currentTargetSSID)")
+                                        .font(.caption)
+                                        .fontWeight(.bold)
+                                }
+                                Text("连接密码: \(coordinator.currentTargetPassword)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Button(action: {
+                                viewModel.copyWifiPassword()
+                            }) {
+                                Text("复制密码")
+                                    .font(.caption2)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.blue.opacity(0.12))
+                                    .cornerRadius(4)
+                            }
+                            
+                            Button(action: {
+                                viewModel.openSystemWifiSettings()
+                            }) {
+                                Text("前往系统 Wi-Fi")
+                                    .font(.caption2)
+                                    .fontWeight(.medium)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.orange.opacity(0.15))
+                                    .foregroundColor(.orange)
+                                    .cornerRadius(4)
+                            }
                         }
                         
-                        Button(action: {
-                            viewModel.openSystemWifiSettings()
-                        }) {
-                            Text("系统 Wi-Fi")
-                                .font(.caption2)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(Color.secondary.opacity(0.15))
-                                .cornerRadius(4)
+                        if coordinator.isHotspotHardwareReady && !hotspot.isWifiActive {
+                            Text("💡 眼镜热点已广播。iOS 如未自动弹出加入提示，请点击上方「前往系统 Wi-Fi」选择该热点连接")
+                                .font(.system(size: 10))
+                                .foregroundColor(.orange)
                         }
                     }
-                    .padding(6)
+                    .padding(8)
                     .background(Color(UIColor.tertiarySystemBackground))
-                    .cornerRadius(6)
+                    .cornerRadius(8)
                 }
                 
                 // RTSP 地址输入

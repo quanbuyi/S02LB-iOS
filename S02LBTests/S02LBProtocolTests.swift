@@ -99,6 +99,26 @@ final class S02LBProtocolTests: XCTestCase {
         XCTAssertEqual(repTriple.wifiSSID, "G1-05488")
         XCTAssertEqual(repTriple.wifiPassword, "88888888")
         XCTAssertTrue(repTriple.isWifiApActive)
+        XCTAssertTrue(repTriple.isWifiApReady)
+        
+        // 5. 真实实机上报 JSON: 包含 wifi_on 字段与 MAC 后六位 SSID
+        let jsonRealOff = """
+        {"soc":"41","charge":"0","size":"58.20","free":"56.29","status":"0,0","mac":"12:34:56:78:9a:bc","ble_pass":"1234","version":"0.0.0.901","fan":"0","record":"5","buzzer":"1","wifi":"789abc,12345678,0","wifi_on":0,"key":"0","rtsp":"0,261022152713,1,2"}
+        """
+        let repRealOff = S02LbReport(rawJson: jsonRealOff)
+        XCTAssertEqual(repRealOff.wifiSSID, "789abc")
+        XCTAssertEqual(repRealOff.wifiPassword, "12345678")
+        XCTAssertEqual(repRealOff.wifiOn, 0)
+        XCTAssertFalse(repRealOff.isWifiApReady, "wifi_on=0 时热点尚未真正启动广播")
+        
+        let jsonRealOn = """
+        {"soc":"40","charge":"0","size":"58.20","free":"56.29","status":"0,0","mac":"12:34:56:78:9a:bc","ble_pass":"1234","version":"0.0.0.901","fan":"0","record":"5","buzzer":"1","wifi":"789abc,12345678,1","wifi_on":1,"key":"0","rtsp":"0,261022152713,1,2"}
+        """
+        let repRealOn = S02LbReport(rawJson: jsonRealOn)
+        XCTAssertEqual(repRealOn.wifiSSID, "789abc")
+        XCTAssertEqual(repRealOn.wifiPassword, "12345678")
+        XCTAssertEqual(repRealOn.wifiOn, 1)
+        XCTAssertTrue(repRealOn.isWifiApReady, "wifi_on=1 时热点广播已就绪")
     }
     
     // MARK: - 流式粘包与分包解包测试
