@@ -36,8 +36,12 @@ public struct MainDeviceView: View {
                     // 5. 命令控制面板
                     commandSection
                     
-                    // 6. 交互日志监控区
-                    logSection
+                    // 6. 交互日志监控区 (受宏与配置开关控制)
+                    #if ENABLE_INTERACTION_LOG
+                    if AppConfig.enableInteractionLog {
+                        logSection
+                    }
+                    #endif
                 }
                 .padding()
             }
@@ -209,6 +213,45 @@ public struct MainDeviceView: View {
                     .font(.caption)
                     .foregroundColor(coordinator.isError ? .red : .primary)
                     .lineLimit(2)
+                
+                // 目标热点信息与辅助按钮 (支持一键复制密码与跳转系统设置)
+                if !coordinator.currentTargetSSID.isEmpty {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("目标热点: \(coordinator.currentTargetSSID)")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                            Text("默认密码: \(coordinator.currentTargetPassword)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button(action: {
+                            viewModel.copyWifiPassword()
+                        }) {
+                            Text("复制密码")
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Color.blue.opacity(0.1))
+                                .cornerRadius(4)
+                        }
+                        
+                        Button(action: {
+                            viewModel.openSystemWifiSettings()
+                        }) {
+                            Text("系统 Wi-Fi")
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Color.secondary.opacity(0.15))
+                                .cornerRadius(4)
+                        }
+                    }
+                    .padding(6)
+                    .background(Color(UIColor.tertiarySystemBackground))
+                    .cornerRadius(6)
+                }
                 
                 // RTSP 地址输入
                 HStack {

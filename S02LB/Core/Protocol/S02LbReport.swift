@@ -62,15 +62,29 @@ public struct S02LbReport {
     }
     
     public var wifiSSID: String? {
-        let parts = wifi.split(separator: ",", omittingEmptySubsequences: false)
-        guard let first = parts.first, !first.isEmpty else { return nil }
-        return String(first)
+        let trimmed = wifi.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 过滤非有效配置: "0"、"-" 或空 (未开启/未就绪时固件返回 "0")
+        guard !trimmed.isEmpty, trimmed != "-", trimmed != "0" else { return nil }
+        let parts = trimmed.split(separator: ",", omittingEmptySubsequences: false).map { String($0).trimmingCharacters(in: .whitespaces) }
+        guard parts.count >= 2 else { return nil }
+        let first = parts[0]
+        guard !first.isEmpty, first != "0", first != "-" else { return nil }
+        return first
     }
     
     public var wifiPassword: String? {
-        let parts = wifi.split(separator: ",", omittingEmptySubsequences: false)
+        let trimmed = wifi.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != "-", trimmed != "0" else { return nil }
+        let parts = trimmed.split(separator: ",", omittingEmptySubsequences: false).map { String($0).trimmingCharacters(in: .whitespaces) }
         guard parts.count >= 2 else { return nil }
-        return String(parts[1])
+        let second = parts[1]
+        guard !second.isEmpty, second != "0" else { return nil }
+        return second
+    }
+    
+    /// 热点是否已处于已配置/已开启状态
+    public var isWifiApActive: Bool {
+        return wifiSSID != nil
     }
     
     public var isStatusReport: Bool {

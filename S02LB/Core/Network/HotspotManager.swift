@@ -2,6 +2,7 @@ import Foundation
 import NetworkExtension
 import Network
 import Combine
+import UIKit
 
 /// 眼镜 Wi-Fi AP 热点连接管理器 (基于 NetworkExtension / NEHotspotConfiguration)
 ///
@@ -85,8 +86,8 @@ public final class HotspotManager: ObservableObject {
                             return
                         }
                         
-                        let msg = "加入 Wi-Fi 失败: \(error.localizedDescription) (code: \(nsErr.code))"
-                        S02Logger.shared.log(msg, tag: "Hotspot")
+                        let msg = self.formatErrorDescription(nsErr)
+                        S02Logger.shared.log("加入 Wi-Fi 失败: \(msg) (rawCode: \(nsErr.code))", tag: "Hotspot")
                         self.lastError = msg
                         continuation.resume(throwing: error)
                     } else {
@@ -96,6 +97,36 @@ public final class HotspotManager: ObservableObject {
                     }
                 }
             }
+        }
+    }
+    
+    private func formatErrorDescription(_ nsErr: NSError) -> String {
+        if nsErr.domain == NEHotspotConfigurationErrorDomain {
+            switch nsErr.code {
+            case 1:
+                return "用户取消了加入热点"
+            case 7:
+                return "未扫描到热点广播，眼镜硬件可能正在启动中"
+            case 8:
+                return "系统配置内部错误（请检查 HotspotConfiguration 权限）"
+            case 13:
+                return "已关联到该热点"
+            case 14:
+                return "申请加入超时，请确认眼镜热点是否在广播"
+            default:
+                return "加入失败: \(nsErr.localizedDescription) (code: \(nsErr.code))"
+            }
+        }
+        return nsErr.localizedDescription
+    }
+    
+    /// 跳转到 iOS 系统 Wi-Fi 设置列表
+    @MainActor
+    public func openSystemWifiSettings() {
+        if let url = URL(string: "App-Prefs:root=WIFI"), UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url)
+        } else if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(settingsUrl)
         }
     }
     

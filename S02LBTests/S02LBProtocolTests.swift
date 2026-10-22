@@ -59,8 +59,46 @@ final class S02LBProtocolTests: XCTestCase {
         XCTAssertEqual(report.batteryLevel, 90)
         XCTAssertFalse(report.isCharging)
         XCTAssertEqual(report.size, "32.0")
-        XCTAssertFalse(report.isRecording)
+        XCTAssertEqual(report.isRecording, false)
         XCTAssertEqual(report.version, "1.0.0")
+    }
+    
+    func testReportWifiParsingVariations() {
+        // 1. 未开启/未就绪时上报 "0" (协议规范: 11 wifi 0 信息，未连接名称和密码都为0)
+        let jsonOff = """
+        {"soc":"80","wifi":"0"}
+        """
+        let repOff = S02LbReport(rawJson: jsonOff)
+        XCTAssertNil(repOff.wifiSSID, "未开启时 wifi='0' 不应被解析为有效 SSID")
+        XCTAssertNil(repOff.wifiPassword)
+        XCTAssertFalse(repOff.isWifiApActive)
+        
+        // 2. 缺省或连字符 "-"
+        let jsonDash = """
+        {"soc":"80","wifi":"-"}
+        """
+        let repDash = S02LbReport(rawJson: jsonDash)
+        XCTAssertNil(repDash.wifiSSID)
+        XCTAssertNil(repDash.wifiPassword)
+        XCTAssertFalse(repDash.isWifiApActive)
+        
+        // 3. 正常双字段: "CAM-05488,12345678"
+        let jsonNormal = """
+        {"soc":"80","wifi":"CAM-05488,12345678"}
+        """
+        let repNormal = S02LbReport(rawJson: jsonNormal)
+        XCTAssertEqual(repNormal.wifiSSID, "CAM-05488")
+        XCTAssertEqual(repNormal.wifiPassword, "12345678")
+        XCTAssertTrue(repNormal.isWifiApActive)
+        
+        // 4. 三字段: "G1-05488,88888888,1"
+        let jsonTriple = """
+        {"soc":"80","wifi":"G1-05488,88888888,1"}
+        """
+        let repTriple = S02LbReport(rawJson: jsonTriple)
+        XCTAssertEqual(repTriple.wifiSSID, "G1-05488")
+        XCTAssertEqual(repTriple.wifiPassword, "88888888")
+        XCTAssertTrue(repTriple.isWifiApActive)
     }
     
     // MARK: - 流式粘包与分包解包测试

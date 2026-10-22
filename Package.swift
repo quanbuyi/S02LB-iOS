@@ -19,7 +19,7 @@ let package = Package(
         .target(
             name: "S02LBKit",
             path: "S02LB",
-            exclude: ["Resources/Info.plist"]
+            exclude: ["Resources/Info.plist", "Resources/S02LB.entitlements"]
         ),
         .testTarget(
             name: "S02LBTests",

@@ -80,6 +80,9 @@ jobs:
           echo "Found app at: $APP_PATH"
           cp -r "$APP_PATH" Payload/
 
+          # 注入 Entitlements 描述，保障重签名工具 (如 TrollStore / AltStore) 能正确授予 HotspotConfiguration 权限
+          cp S02LB/Resources/S02LB.entitlements Payload/S02LB.app/archived-expanded-entitlements.xcent || true
+
           # 强制注入蓝牙与外设访问隐私描述，避免任何构建器重写导致缺失崩溃
           PLIST="Payload/S02LB.app/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :NSBluetoothAlwaysUsageDescription 'S02LB App 需要使用蓝牙扫描、连接并控制智能眼镜设备，下发拍照录像与配置指令。'" "$PLIST" || /usr/libexec/PlistBuddy -c "Add :NSBluetoothAlwaysUsageDescription string 'S02LB App 需要使用蓝牙扫描、连接并控制智能眼镜设备，下发拍照录像与配置指令。'" "$PLIST"

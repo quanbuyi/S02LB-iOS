@@ -8,7 +8,8 @@ import Network
 /// 1. 协调 BLE 命令下发与 Wi-Fi 热点自动连接 (NEHotspotConfiguration)；
 /// 2. 状态机驱动：AP 就绪 -> 端口可达性探测 -> RTSP 启动 -> DESCRIBE 校验 -> 释放回收；
 /// 3. 设备多媒体互斥管理：严格遵守硬件互斥规则（RTSP 推流中禁止拍照/录像/格式化）；
-/// 4. 严密跟踪设备 RTSP_STOP 序列号确认，避免盲目切断导致固件死锁或重启。
+/// 4. 严密跟踪设备 RTSP_STOP 序列号确认，避免盲目切断导致固件死锁或重启；
+/// 5. 严格实施重试间隔退避（8秒）与重试上限（最多4次），彻底杜绝命令风暴打死固件。
 public final class WifiRtspCoordinator: ObservableObject {
     
     public enum Phase: String {
@@ -33,6 +34,10 @@ public final class WifiRtspCoordinator: ObservableObject {
     @Published public private(set) var isRtspReady: Bool = false
     @Published public var rtspUrl: String = "rtsp://192.168.43.1:554/6600"
     
+    // 当前推导出的热点名称与密码（供 UI 展示与手动连接备用）
+    @Published public private(set) var currentTargetSSID: String = ""
+    @Published public private(set) var currentTargetPassword: String = "12345678"
+    
     // MARK: - 回调
     public var onStartPlayer: ((String) -> Void)?
     public var onStopPlayer: (() -> Void)?
@@ -53,6 +58,22 @@ public final class WifiRtspCoordinator: ObservableObject {
     private var lastStopSequence: Int64 = -1
     private var pendingStopSequence: Int64 = -1
     
+    // MARK: - 重试退避与超时控制 (对齐成熟策略)
+    private let retryInterval: TimeInterval = 8.0 // 8 秒重试间隔，拒绝命令风暴
+    private let flowTimeout: TimeInterval = 60.0  // 单次动作最长 60 秒保护
+    private let maxWifiSends: Int = 4             // 开启 WiFi 命令最多发 4 次
+    private let maxStartSends: Int = 3            // 启动 RTSP 命令最多发 3 次
+    private let maxStopSends: Int = 3             // 停止 RTSP 命令最多发 3 次
+    
+    private var wifiSends: Int = 0
+    private var startSends: Int = 0
+    private var stopSends: Int = 0
+    
+    private var nextWifiDate: Date = Date.distantPast
+    private var nextStartDate: Date = Date.distantPast
+    private var nextStopDate: Date = Date.distantPast
+    private var deadlineDate: Date = Date.distantFuture
+    
     private var generation: Int64 = 0
     private var timer: AnyCancellable?
     private var isProbing: Bool = false
@@ -69,6 +90,23 @@ public final class WifiRtspCoordinator: ObservableObject {
             .compactMap { $0 }
             .sink { [weak self] report in
                 self?.handleBleReport(report)
+            }
+            .store(in: &cancellables)
+        
+        // 监听当前连接的蓝牙设备名称，用于 SSID 智能推导回退
+        bleManager.$connectedDevice
+            .sink { [weak self] dev in
+                self?.updateCandidateCredentials()
+            }
+            .store(in: &cancellables)
+        
+        // 监听蓝牙连接断开，立即重置状态机，杜绝在断连后发送指令
+        bleManager.$isConnected
+            .sink { [weak self] connected in
+                guard let self = self else { return }
+                if !connected {
+                    self.cancel()
+                }
             }
             .store(in: &cancellables)
         
@@ -92,6 +130,36 @@ public final class WifiRtspCoordinator: ObservableObject {
             }
     }
     
+    // MARK: - 智能 SSID 与密码推导 (优先上报，缺省时以蓝牙广播名回退)
+    
+    public var resolvedSSID: String {
+        // 1. 若上报了有效 SSID，直接使用
+        if !targetSSID.isEmpty && targetSSID != "0" && targetSSID != "-" {
+            return targetSSID
+        }
+        // 2. 否则以当前连接的蓝牙设备名称（如 G1-05488, CAM-xxxx）作为候选
+        if let devName = bleManager.connectedDevice?.name, !devName.isEmpty {
+            return devName
+        }
+        return ""
+    }
+    
+    public var resolvedPassword: String {
+        if !targetPassword.isEmpty && targetPassword != "0" && targetPassword != "-" {
+            return targetPassword
+        }
+        return "12345678"
+    }
+    
+    private func updateCandidateCredentials() {
+        let s = self.resolvedSSID
+        let p = self.resolvedPassword
+        if self.currentTargetSSID != s || self.currentTargetPassword != p {
+            self.currentTargetSSID = s
+            self.currentTargetPassword = p
+        }
+    }
+    
     // MARK: - 公开控制动作
     
     /// 开启眼镜 WiFi 热点并自动加入
@@ -101,6 +169,7 @@ public final class WifiRtspCoordinator: ObservableObject {
             return
         }
         
+        updateCandidateCredentials()
         wifiWanted = true
         rtspWanted = false
         isStopPending = false
@@ -113,7 +182,10 @@ public final class WifiRtspCoordinator: ObservableObject {
     
     /// 关闭 WiFi 热点并断开关联
     public func disableWifi() {
-        guard bleManager.isConnected else { return }
+        guard bleManager.isConnected else {
+            cancel()
+            return
+        }
         
         generation += 1
         wifiWanted = false
@@ -139,6 +211,7 @@ public final class WifiRtspCoordinator: ObservableObject {
             return
         }
         
+        updateCandidateCredentials()
         wifiWanted = true
         rtspWanted = true
         previewWanted = preview
@@ -151,7 +224,10 @@ public final class WifiRtspCoordinator: ObservableObject {
     
     /// 停止 RTSP 推流并等待设备释放硬件编码器
     public func stopRtsp() {
-        guard bleManager.isConnected else { return }
+        guard bleManager.isConnected else {
+            cancel()
+            return
+        }
         generation += 1
         rtspWanted = false
         previewWanted = false
@@ -173,19 +249,61 @@ public final class WifiRtspCoordinator: ObservableObject {
         }
     }
     
+    /// 重置状态机
+    public func cancel() {
+        wifiWanted = false
+        rtspWanted = false
+        previewWanted = false
+        isStopPending = false
+        stopConfirmed = false
+        phase = .off
+        wifiSends = 0
+        startSends = 0
+        stopSends = 0
+        deadlineDate = Date.distantFuture
+        onStopPlayer?()
+        show("未开启", isError: false)
+    }
+    
     // MARK: - 内部状态机调度
     
     private func begin(phase target: Phase) {
         self.phase = target
+        let now = Date()
+        self.deadlineDate = now.addingTimeInterval(flowTimeout)
+        self.wifiSends = 0
+        self.startSends = 0
+        self.stopSends = 0
+        self.nextWifiDate = now
+        self.nextStartDate = now
+        self.nextStopDate = now
         S02Logger.shared.log("状态机切换 -> \(target.rawValue)", tag: "WiFiFlow")
     }
     
     private func tick() {
         guard phase != .off && phase != .failed else { return }
+        guard bleManager.isConnected else {
+            cancel()
+            return
+        }
+        
+        let now = Date()
+        
+        // 0. 流程超时检查
+        if now >= deadlineDate {
+            fail(reason: "等待热点与服务就绪超时 (超过 \(Int(flowTimeout)) 秒)")
+            return
+        }
         
         // 1. 停止推流中：等待设备释放确认
         if phase == .stopping {
             show("RTSP 正在停止，等待设备释放媒体资源...", isError: false)
+            if !stopConfirmed && now >= nextStopDate && stopSends < maxStopSends {
+                stopSends += 1
+                nextStopDate = now.addingTimeInterval(retryInterval)
+                S02Logger.shared.log("重发停止 RTSP 命令 (\(stopSends)/\(maxStopSends))...", tag: "WiFiFlow")
+                bleManager.send(command: .rtspStop)
+            }
             if stopConfirmed && !isRtspReady {
                 isStopPending = false
                 begin(phase: wifiWanted ? .ready : .waitOff)
@@ -196,30 +314,52 @@ public final class WifiRtspCoordinator: ObservableObject {
         // 2. 关闭热点中
         if !wifiWanted || phase == .waitOff {
             show("正在关闭 WiFi 传输...", isError: false)
-            bleManager.send(command: .setWifiOff)
-            if !targetSSID.isEmpty {
-                hotspotManager.disconnectHotspot(ssid: targetSSID)
+            if now >= nextWifiDate && wifiSends < 2 {
+                wifiSends += 1
+                nextWifiDate = now.addingTimeInterval(retryInterval)
+                bleManager.send(command: .setWifiOff)
             }
-            begin(phase: .off)
+            let ssid = self.resolvedSSID
+            if !ssid.isEmpty {
+                hotspotManager.disconnectHotspot(ssid: ssid)
+            }
+            if wifiSends >= 2 || !hotspotManager.isWifiActive {
+                begin(phase: .off)
+            }
             return
         }
         
         // 3. 等待热点开启与连接
         if phase == .waitAp {
-            show("下发开 WiFi 命令，等待热点就绪与手机连接...", isError: false)
-            bleManager.send(command: .setWifiOn)
+            let ssid = self.resolvedSSID
+            let pass = self.resolvedPassword
             
-            // 如果已知 SSID 且当前未连上 Wi-Fi，尝试自动加入
-            let ssid = self.targetSSID
-            let pass = self.targetPassword
-            if !ssid.isEmpty && !hotspotManager.isWifiActive && !hotspotManager.isConnectingHotspot {
-                Task {
-                    do {
-                        try await self.hotspotManager.connectToHotspot(ssid: ssid, passphrase: pass)
-                    } catch {
-                        S02Logger.shared.log("自动关联热点重试: \(error.localizedDescription)", tag: "WiFiFlow")
+            // 严格按 8 秒间隔有界重发（最多 4 次），彻底消除命令风暴
+            if now >= nextWifiDate && wifiSends < maxWifiSends {
+                wifiSends += 1
+                nextWifiDate = now.addingTimeInterval(retryInterval)
+                S02Logger.shared.log("下发开启 WiFi 传输命令 (\(wifiSends)/\(maxWifiSends))...", tag: "WiFiFlow")
+                bleManager.send(command: .setWifiOn)
+            }
+            
+            if !ssid.isEmpty {
+                show("已请求开启热点 [\(ssid)]，等待广播并连接...", isError: false)
+                
+                // 如果已知 SSID 且当前未接入 Wi-Fi，尝试通过 NEHotspotConfiguration 自动关联
+                if !hotspotManager.isWifiActive && !hotspotManager.isConnectingHotspot {
+                    Task {
+                        // 预热 2.5 秒，给硬件 309 hostapd 留出广播时间
+                        try? await Task.sleep(nanoseconds: 2_500_000_000)
+                        guard self.phase == .waitAp, !self.hotspotManager.isWifiActive else { return }
+                        do {
+                            try await self.hotspotManager.connectToHotspot(ssid: ssid, passphrase: pass)
+                        } catch {
+                            S02Logger.shared.log("自动关联热点: \(error.localizedDescription)", tag: "WiFiFlow")
+                        }
                     }
                 }
+            } else {
+                show("已下发开启 WiFi，正在获取热点广播配置...", isError: false)
             }
             
             // 触发服务可达性探测
@@ -230,7 +370,12 @@ public final class WifiRtspCoordinator: ObservableObject {
         // 4. 等待推流就绪
         if phase == .waitRtsp {
             show("热点已连接，下发推流命令并等待 RTSP DESCRIBE 响应...", isError: false)
-            bleManager.send(command: .rtspStart)
+            if now >= nextStartDate && startSends < maxStartSends {
+                startSends += 1
+                nextStartDate = now.addingTimeInterval(retryInterval)
+                S02Logger.shared.log("下发启动推流命令 (\(startSends)/\(maxStartSends))...", tag: "WiFiFlow")
+                bleManager.send(command: .rtspStart)
+            }
             triggerServiceProbe()
             return
         }
@@ -291,11 +436,12 @@ public final class WifiRtspCoordinator: ObservableObject {
     // MARK: - 处理 BLE 上报信息
     
     private func handleBleReport(_ report: S02LbReport) {
-        // 提取 Wi-Fi SSID 与密码
-        if let ssid = report.wifiSSID, !ssid.isEmpty, ssid != "-" {
+        // 提取 Wi-Fi SSID 与密码 (只有合法有效时才更新)
+        if let ssid = report.wifiSSID, !ssid.isEmpty, ssid != "-", ssid != "0" {
             if targetSSID != ssid {
                 targetSSID = ssid
                 targetPassword = report.wifiPassword ?? "12345678"
+                updateCandidateCredentials()
                 S02Logger.shared.log("解析到眼镜 Wi-Fi 热点配置: SSID=\(targetSSID), PW=\(targetPassword)", tag: "WiFiFlow")
             }
         }
@@ -321,6 +467,13 @@ public final class WifiRtspCoordinator: ObservableObject {
                 }
             }
         }
+    }
+    
+    private func fail(reason: String) {
+        self.phase = .failed
+        onStopPlayer?()
+        show(reason, isError: true)
+        S02Logger.shared.log("流程异常: \(reason)", tag: "WiFiFlow")
     }
     
     private func show(_ text: String, isError: Bool) {

@@ -36,4 +36,19 @@ targets:
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGN_IDENTITY: ""
         AD_HOC_CODE_SIGNING_ALLOWED: YES
+        CODE_SIGN_ENTITLEMENTS: S02LB/Resources/S02LB.entitlements
+        OTHER_SWIFT_FLAGS:
+          - $(inherited)
+          - -DENABLE_INTERACTION_LOG
+        SWIFT_VERSION: "5.0"
+  S02LBTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: S02LBTests
+    dependencies:
+      - target: S02LB
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.s02lb.app.tests
         SWIFT_VERSION: "5.0"

@@ -76,6 +76,7 @@ public final class BlePacketParser {
             onRawFrameParsed?(frameData)
             
             if let jsonString = String(data: payloadData, encoding: .utf8) {
+                S02Logger.shared.log("解析上行 JSON: \(jsonString)", tag: "BlePacketParser")
                 let report = S02LbReport(rawJson: jsonString)
                 onReportParsed?(report)
             } else {

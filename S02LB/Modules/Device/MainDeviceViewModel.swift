@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import CoreBluetooth
+import UIKit
 
 /// S02LB 主界面 ViewModel
 @MainActor
@@ -88,6 +89,16 @@ public final class MainDeviceViewModel: ObservableObject {
             return
         }
         ble.setWifiPassword(wifiPasswordInput)
+    }
+    
+    public func copyWifiPassword() {
+        let pw = coordinator.currentTargetPassword
+        UIPasteboard.general.string = pw
+        notify("热点密码已复制到剪贴板: \(pw)")
+    }
+    
+    public func openSystemWifiSettings() {
+        hotspot.openSystemWifiSettings()
     }
     
     // MARK: - Wi-Fi AP 与推流控制 (Phase 2)

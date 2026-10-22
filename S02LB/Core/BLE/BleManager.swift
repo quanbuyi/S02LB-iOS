@@ -62,6 +62,7 @@ public final class BleManager: NSObject, ObservableObject {
     private func setupPacketParser() {
         packetParser.onReportParsed = { [weak self] report in
             guard let self = self else { return }
+            self.log("收到设备上报: \(report.raw)")
             DispatchQueue.main.async {
                 self.latestReport = report
                 self.delegate?.bleManager(self, didReceiveReport: report)
@@ -79,6 +80,7 @@ public final class BleManager: NSObject, ObservableObject {
     // MARK: - 统一日志记录
     private func log(_ message: String) {
         S02Logger.shared.log(message, tag: "BleManager")
+        guard AppConfig.enableInteractionLog else { return }
         DispatchQueue.main.async {
             self.logMessages.append(message)
             if self.logMessages.count > 300 {
@@ -484,6 +486,7 @@ extension BleManager: CBPeripheralDelegate {
         guard let data = characteristic.value, !data.isEmpty else { return }
         
         if characteristic.uuid == BleConstants.txCharUUID {
+            log("收到通知 [\(data.count)B]: \(data.hexString)")
             // 输入流式粘包解包器
             packetParser.append(data: data)
         } else if characteristic.uuid == BleConstants.otaTxCharUUID {
