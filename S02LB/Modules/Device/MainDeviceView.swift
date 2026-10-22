@@ -464,11 +464,11 @@ public struct MainDeviceView: View {
                     viewModel.copyDiagnosticsSummary()
                 }) {
                     HStack(spacing: 3) {
-                        Image(systemName: "doc.on.clipboard")
+                        Image(systemName: "doc.on.doc")
                         Text("复制精简日志(QQ)")
+                            .fontWeight(.medium)
                     }
                     .font(.caption2)
-                    .fontWeight(.medium)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Color.blue.opacity(0.15))
