@@ -48,6 +48,7 @@ public final class BleManager: NSObject, ObservableObject {
     private let packetParser = BlePacketParser()
     private var scanTimeoutWorkItem: DispatchWorkItem?
     private var lastScanLogTime: [UUID: Date] = [:]
+    private var lastReportKey: String = ""
     
     // MARK: - 初始化
     public override init() {
@@ -77,7 +78,12 @@ public final class BleManager: NSObject, ObservableObject {
     private func setupPacketParser() {
         packetParser.onReportParsed = { [weak self] report in
             guard let self = self else { return }
-            self.log("收到设备上报: \(report.raw)")
+            // 过滤重复心跳，仅在状态变更或关键事件发生时记录日志，防止长日志超出聊天框
+            let currentKey = "\(report.soc)_\(report.isCharging)_\(report.wifi)_\(report.wifiOn)_\(report.rtsp)_\(report.fan)_\(report.isRecording)"
+            if currentKey != self.lastReportKey {
+                self.lastReportKey = currentKey
+                self.log("收到设备状态更新: 电量=\(report.soc)% 充电=\(report.charge) 热点=\(report.wifiSSID ?? "-")(wifi_on=\(report.wifiOn)) RTSP=\(report.rtsp)")
+            }
             DispatchQueue.main.async {
                 self.latestReport = report
                 self.delegate?.bleManager(self, didReceiveReport: report)
@@ -92,9 +98,34 @@ public final class BleManager: NSObject, ObservableObject {
         }
     }
     
-    // MARK: - 统一日志记录
+    // MARK: - 统一日志记录与精简摘要
     private func log(_ message: String, tag: String = "BleManager") {
         S02Logger.shared.log(message, tag: tag)
+    }
+    
+    /// 清空所有交互日志
+    public func clearLogs() {
+        DispatchQueue.main.async {
+            self.logMessages.removeAll()
+        }
+    }
+    
+    /// 获取精简诊断摘要 (过滤重复心跳与冗余Hex，仅保留关键动作与错误，适合复制至 QQ/微信等聊天窗口)
+    public func getDiagnosticsSummary() -> String {
+        let keywords = ["★", "连接", "断开", "就绪", "下发", "WiFiFlow", "Hotspot", "失败", "错误", "异常", "状态更新"]
+        let keyEvents = logMessages.filter { msg in
+            keywords.contains { kw in msg.contains(kw) }
+        }
+        
+        let recent = Array(keyEvents.suffix(20))
+        var summary = "=== S02LB 运行诊断摘要 (共 \(recent.count) 条关键记录) ===\n"
+        if let rep = latestReport {
+            summary += "当前状态: 电量 \(rep.soc)%, 充电: \(rep.charge), 热点: \(rep.wifiSSID ?? "-") (wifi_on: \(rep.wifiOn)), RTSP: \(rep.rtsp)\n"
+        }
+        summary += "----------------------------------------\n"
+        summary += recent.joined(separator: "\n")
+        summary += "\n========================================"
+        return summary
     }
     
     // MARK: - 扫描控制
@@ -493,7 +524,10 @@ extension BleManager: CBPeripheralDelegate {
         guard let data = characteristic.value, !data.isEmpty else { return }
         
         if characteristic.uuid == BleConstants.txCharUUID {
-            log("收到通知 [\(data.count)B]: \(data.hexString)")
+            // 避免心跳大包 Hex 刷屏导致 QQ 聊天记录被冲爆，只在短包(<=30B 控制回包)时打印 Hex
+            if data.count <= 30 {
+                log("收到通知 [\(data.count)B]: \(data.hexString)")
+            }
             // 输入流式粘包解包器
             packetParser.append(data: data)
         } else if characteristic.uuid == BleConstants.otaTxCharUUID {

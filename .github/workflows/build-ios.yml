@@ -56,8 +56,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_ENTITLEMENTS="" 2>&1 | tee build.log || true
+            CODE_SIGN_STYLE=Manual 2>&1 | tee build.log || true
 
           if grep -q "BUILD FAILED" build.log; then
             echo ""

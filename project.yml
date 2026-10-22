@@ -12,6 +12,14 @@ targets:
       - path: S02LB/App
       - path: S02LB/Core
       - path: S02LB/Modules
+    attributes:
+      SystemCapabilities:
+        com.apple.HotspotConfiguration:
+          enabled: 1
+    entitlements:
+      path: S02LB/Resources/S02LB.entitlements
+      properties:
+        com.apple.developer.networking.HotspotConfiguration: true
     info:
       path: S02LB/Resources/Info.plist
       properties:

@@ -97,6 +97,12 @@ public final class MainDeviceViewModel: ObservableObject {
         notify("热点密码已复制到剪贴板: \(pw)")
     }
     
+    public func copyDiagnosticsSummary() {
+        let summary = ble.getDiagnosticsSummary()
+        UIPasteboard.general.string = summary
+        notify("已复制精简诊断日志 (适合发送QQ)")
+    }
+    
     public func openSystemWifiSettings() {
         let pw = coordinator.currentTargetPassword
         let ssid = coordinator.currentTargetSSID

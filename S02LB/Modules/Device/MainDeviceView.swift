@@ -455,15 +455,50 @@ public struct MainDeviceView: View {
     // MARK: - 日志监视区
     private var logSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            HStack(spacing: 6) {
                 Text("▸ 交互日志 (\(ble.logMessages.count))")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 Spacer()
-                Button("复制日志") {
-                    UIPasteboard.general.string = ble.logMessages.joined(separator: "\n")
+                Button(action: {
+                    viewModel.copyDiagnosticsSummary()
+                }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "doc.on.clipboard")
+                        Text("复制精简日志(QQ)")
+                    }
+                    .font(.caption2)
+                    .fontWeight(.medium)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.blue.opacity(0.15))
+                    .foregroundColor(.blue)
+                    .cornerRadius(4)
                 }
-                .font(.caption)
+                
+                Button(action: {
+                    UIPasteboard.general.string = ble.logMessages.joined(separator: "\n")
+                    viewModel.notify("已复制全部日志 (\(ble.logMessages.count) 条)")
+                }) {
+                    Text("全部")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .background(Color.secondary.opacity(0.12))
+                        .cornerRadius(4)
+                }
+                
+                Button(action: {
+                    ble.clearLogs()
+                }) {
+                    Text("清空")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .background(Color.red.opacity(0.12))
+                        .foregroundColor(.red)
+                        .cornerRadius(4)
+                }
             }
             
             ScrollViewReader { proxy in

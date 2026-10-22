@@ -52,7 +52,7 @@ public final class HotspotManager: ObservableObject {
     ///   - ssid: 眼镜热点名称 (如 "CAM-12345" 或 "G1-67890")
     ///   - passphrase: 密码 (固件默认通常为 8~16 位，如 "12345678")
     ///   - joinOnce: 是否仅单次临时连接 (默认 false 保持会话)
-    public func connectToHotspot(ssid: String, passphrase: String, joinOnce: Bool = false) async throws {
+    public func connectToHotspot(ssid: String, passphrase: String, joinOnce: Bool = true) async throws {
         guard !ssid.isEmpty else {
             throw NSError(domain: "HotspotManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "SSID 不能为空"])
         }
@@ -71,13 +71,18 @@ public final class HotspotManager: ObservableObject {
         
         S02Logger.shared.log("请求通过 NEHotspotConfiguration 加入热点: \(ssid)", tag: "Hotspot")
         
+        // 先清理该热点可能存在的旧残留配置，避免系统 helper 抛出 Code 8 内部错误
+        NEHotspotConfigurationManager.shared.removeConfiguration(forSSID: ssid)
+        try? await Task.sleep(nanoseconds: 80_000_000)
+        
         let config: NEHotspotConfiguration
         if passphrase.isEmpty {
             config = NEHotspotConfiguration(ssid: ssid)
         } else {
             config = NEHotspotConfiguration(ssid: ssid, passphrase: passphrase, isWEP: false)
         }
-        config.joinOnce = joinOnce
+        // 设置为 true 避免写入持久化 Keychain 导致系统配置冲突与 Code 8
+        config.joinOnce = true
         
         return try await withCheckedThrowingContinuation { continuation in
             NEHotspotConfigurationManager.shared.apply(config) { [weak self] error in
@@ -117,7 +122,7 @@ public final class HotspotManager: ObservableObject {
             case 7:
                 return "未扫描到热点广播 [\(ssid)]，眼镜硬件可能正在启动中"
             case 8:
-                return "系统配置内部错误 (Code 8: 需付费开发者签名或TrollStore，请在系统 Wi-Fi 中手动连接【\(ssid)】)"
+                return "系统配置受限 (Code 8: iOS 限制个人证书静默加入，请点击界面按钮在系统 Wi-Fi 中连接【\(ssid)】)"
             case 13:
                 return "已关联到该热点"
             case 14:
