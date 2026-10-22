@@ -477,8 +477,7 @@ public struct MainDeviceView: View {
                 }
                 
                 Button(action: {
-                    UIPasteboard.general.string = ble.logMessages.joined(separator: "\n")
-                    viewModel.notify("已复制全部日志 (\(ble.logMessages.count) 条)")
+                    viewModel.copyAllLogs()
                 }) {
                     Text("全部")
                         .font(.caption2)

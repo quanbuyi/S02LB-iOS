@@ -129,7 +129,12 @@ public final class MainDeviceViewModel: ObservableObject {
         coordinator.stopRtsp()
     }
     
-    private func notify(_ msg: String) {
+    public func copyAllLogs() {
+        UIPasteboard.general.string = ble.logMessages.joined(separator: "\n")
+        notify("已复制全部日志 (\(ble.logMessages.count) 条)")
+    }
+    
+    public func notify(_ msg: String) {
         self.alertMessage = msg
         self.showAlert = true
     }
