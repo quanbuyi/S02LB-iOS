@@ -95,6 +95,13 @@ jobs:
           plutil -p "$PLIST"
           echo "===================================================================="
 
+          # 使用 ad-hoc 签名将 entitlements 强行嵌入 Mach-O 二进制，消除个人证书/TrollStore安装权限缺失引发的 Code 8
+          codesign -s - --force --deep --entitlements S02LB/Resources/S02LB.entitlements Payload/S02LB.app
+
+          echo "====================== 验证 Mach-O 嵌入的 Entitlements ======================"
+          codesign -d --entitlements :- Payload/S02LB.app || true
+          echo "=============================================================================="
+
           zip -r S02LB.ipa Payload
           echo "IPA created successfully"
 

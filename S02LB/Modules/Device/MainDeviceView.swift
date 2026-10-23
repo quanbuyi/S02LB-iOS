@@ -64,7 +64,20 @@ public struct MainDeviceView: View {
                 }
             }
             .alert(isPresented: $viewModel.showAlert) {
-                Alert(title: Text("提示"), message: Text(viewModel.alertMessage ?? ""), dismissButton: .default(Text("确定")))
+                if let onConfirm = viewModel.alertConfirmAction {
+                    return Alert(
+                        title: Text(viewModel.alertTitle),
+                        message: Text(viewModel.alertMessage ?? ""),
+                        primaryButton: .default(Text(viewModel.alertConfirmTitle), action: onConfirm),
+                        secondaryButton: .cancel(Text("稍后"))
+                    )
+                } else {
+                    return Alert(
+                        title: Text(viewModel.alertTitle),
+                        message: Text(viewModel.alertMessage ?? ""),
+                        dismissButton: .default(Text(viewModel.alertConfirmTitle))
+                    )
+                }
             }
             .sheet(isPresented: $viewModel.showFanDialog) {
                 fanSelectionSheet

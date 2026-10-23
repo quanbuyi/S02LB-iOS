@@ -35,6 +35,9 @@ public final class HotspotManager: ObservableObject {
     @Published public private(set) var isConnectingHotspot: Bool = false
     @Published public private(set) var lastError: String? = nil
     
+    /// 当由于系统限制 (如 Code 8 个人证书限制) 需要用户前往系统 Wi-Fi 设置手动连接时触发
+    @Published public var manualConnectionPrompt: (ssid: String, password: String, reason: String)? = nil
+    
     private var currentConnectingSSID: String? = nil
     private let pathMonitor = NWPathMonitor(requiredInterfaceType: .wifi)
     private let monitorQueue = DispatchQueue(label: "com.s02lb.hotspot.monitor")
@@ -80,15 +83,16 @@ public final class HotspotManager: ObservableObject {
         pathMonitor.start(queue: monitorQueue)
     }
     
-    // MARK: - 评估与更新连接状态 (支持动态 SSID 与 IP 交叉校验)
+    // MARK: - 评估与更新连接状态 (严格基于 IP 与服务探活，杜绝 SSID 盲目误判)
     
     /// 根据当前 IP 与探测状态，严格区分是接入了眼镜专属热点还是连接了其它 Wi-Fi
     public func evaluateConnection(targetSSID: String, targetHost: String, isServiceReachable: Bool) {
         let ip = NetworkInterfaceHelper.getWifiIPv4Address()
         let isSubnetMatch = NetworkInterfaceHelper.isSameSubnet(ipA: ip, ipB: targetHost)
-        let isSsidMatch = (self.currentSSID != nil && !targetSSID.isEmpty && self.currentSSID == targetSSID)
         
-        let targetConnected = isServiceReachable || isSsidMatch || isSubnetMatch
+        // 核心铁律：只有手机处于 Wi-Fi 状态且 (IP 处于 192.168.43.x 或 FTP/RTSP 服务可达) 时，才算接入眼镜热点！
+        // 绝对不得仅凭客户端记录的 SSID 变量做判定，杜绝连接家庭/办公 Wi-Fi 时误判！
+        let targetConnected = self.isAnyWifiActive && (isServiceReachable || isSubnetMatch)
         
         DispatchQueue.main.async {
             self.currentWifiIP = ip
@@ -156,11 +160,14 @@ public final class HotspotManager: ObservableObject {
                         let nsErr = error as NSError
                         // NEHotspotConfigurationError.alreadyAssociated (code 13) 表示已经连接在当前热点
                         if nsErr.domain == NEHotspotConfigurationErrorDomain && nsErr.code == 13 {
-                            S02Logger.shared.log("已关联到该热点 (\(ssid))", tag: "Hotspot")
+                            S02Logger.shared.log("系统反馈已关联到该热点配置 (\(ssid))，正在校验 IP 子网...", tag: "Hotspot")
                             self.currentSSID = ssid
-                            self.isTargetHotspotConnected = true
-                            self.isWifiActive = true
-                            self.isOtherWifiConnected = false
+                            let ip = NetworkInterfaceHelper.getWifiIPv4Address()
+                            let isSubnetMatch = NetworkInterfaceHelper.isSameSubnet(ipA: ip, ipB: "192.168.43.1")
+                            let connected = self.isAnyWifiActive && isSubnetMatch
+                            self.isTargetHotspotConnected = connected
+                            self.isWifiActive = connected
+                            self.isOtherWifiConnected = self.isAnyWifiActive && !connected
                             continuation.resume()
                             return
                         }
@@ -168,13 +175,28 @@ public final class HotspotManager: ObservableObject {
                         let msg = self.formatErrorDescription(nsErr, ssid: ssid)
                         S02Logger.shared.log("加入 Wi-Fi 失败: \(msg) (rawCode: \(nsErr.code))", tag: "Hotspot")
                         self.lastError = msg
+                        
+                        // 针对 Code 8 (个人证书签名无权限静默加入) 或 Code 7 (未搜到广播)，主动触发弹窗提示用户前往系统设置
+                        if nsErr.domain == NEHotspotConfigurationErrorDomain && (nsErr.code == 8 || nsErr.code == 7) {
+                            self.manualConnectionPrompt = (
+                                ssid: ssid,
+                                password: passphrase,
+                                reason: nsErr.code == 8 
+                                    ? "iOS 系统限制个人证书静默加入热点，需前往系统设置手动连接。" 
+                                    : "尚未扫描到热点广播，请在系统无线局域网列表中确认。"
+                            )
+                        }
+                        
                         continuation.resume(throwing: error)
                     } else {
-                        S02Logger.shared.log("已成功提交加入 Wi-Fi 热点请求: \(ssid)", tag: "Hotspot")
+                        S02Logger.shared.log("已成功向系统提交加入 Wi-Fi 热点请求: \(ssid)，等待 DHCP 完成...", tag: "Hotspot")
                         self.currentSSID = ssid
-                        self.isTargetHotspotConnected = true
-                        self.isWifiActive = true
-                        self.isOtherWifiConnected = false
+                        let ip = NetworkInterfaceHelper.getWifiIPv4Address()
+                        let isSubnetMatch = NetworkInterfaceHelper.isSameSubnet(ipA: ip, ipB: "192.168.43.1")
+                        let connected = self.isAnyWifiActive && isSubnetMatch
+                        self.isTargetHotspotConnected = connected
+                        self.isWifiActive = connected
+                        self.isOtherWifiConnected = self.isAnyWifiActive && !connected
                         continuation.resume()
                     }
                 }

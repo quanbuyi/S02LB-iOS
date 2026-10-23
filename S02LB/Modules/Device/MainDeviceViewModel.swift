@@ -17,7 +17,10 @@ public final class MainDeviceViewModel: ObservableObject {
     @Published public var showWifiPwDialog: Bool = false
     @Published public var wifiPasswordInput: String = "12345678"
     @Published public var customRtspUrlInput: String = "rtsp://192.168.43.1:554/6600"
+    @Published public var alertTitle: String = "提示"
     @Published public var alertMessage: String? = nil
+    @Published public var alertConfirmTitle: String = "确定"
+    @Published public var alertConfirmAction: (() -> Void)? = nil
     @Published public var showAlert: Bool = false
     
     private var cancellables = Set<AnyCancellable>()
@@ -26,6 +29,23 @@ public final class MainDeviceViewModel: ObservableObject {
         // 监听底层状态
         ble.$servicesSummary
             .sink { _ in }
+            .store(in: &cancellables)
+            
+        // 监听手动加入 Wi-Fi 弹窗提示
+        hotspot.$manualConnectionPrompt
+            .compactMap { $0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] prompt in
+                guard let self = self else { return }
+                UIPasteboard.general.string = prompt.password
+                self.showConfirmDialog(
+                    title: "请连接眼镜 Wi-Fi",
+                    message: "\(prompt.reason)\n\n热点名称: 【\(prompt.ssid)】\n热点密码: 【\(prompt.password)】(已自动复制到剪贴板)\n\n点击「立即前往」将在系统无线局域网中直接连接。",
+                    confirmTitle: "立即前往 Wi-Fi 设置"
+                ) {
+                    self.hotspot.openSystemWifiSettings()
+                }
+            }
             .store(in: &cancellables)
     }
     
@@ -134,8 +154,19 @@ public final class MainDeviceViewModel: ObservableObject {
         notify("已复制全部日志 (\(ble.logMessages.count) 条)")
     }
     
-    public func notify(_ msg: String) {
+    public func notify(_ msg: String, title: String = "提示") {
+        self.alertTitle = title
         self.alertMessage = msg
+        self.alertConfirmTitle = "确定"
+        self.alertConfirmAction = nil
+        self.showAlert = true
+    }
+    
+    public func showConfirmDialog(title: String = "提示", message: String, confirmTitle: String = "确定", action: @escaping () -> Void) {
+        self.alertTitle = title
+        self.alertMessage = message
+        self.alertConfirmTitle = confirmTitle
+        self.alertConfirmAction = action
         self.showAlert = true
     }
 }

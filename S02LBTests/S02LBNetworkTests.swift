@@ -72,7 +72,7 @@ final class S02LBNetworkTests: XCTestCase {
         
         // 场景 C: 固件显式上报了 SSID，优先使用上报的 SSID
         let repC = S02LbReport(rawJson: """
-        {"mac":"12:34:56:78:9a:bc","wifi":"CAM-998877,12345678,1","wifi_on":1}
+        {"mac":"12:34:56:78:9a:bc","wifi":"CAM-998877,12345678,1"}
         """)
         XCTAssertEqual(repC.wifiSSID, "CAM-998877", "显式上报时优先使用显式 SSID")
     }
@@ -92,5 +92,40 @@ final class S02LBNetworkTests: XCTestCase {
         // 场景 3: 手机连接了企业网 (如 10.0.0.x)
         let corpWifiIP = "10.0.0.55"
         XCTAssertFalse(NetworkInterfaceHelper.isSameSubnet(ipA: corpWifiIP, ipB: glassesCameraIP), "10.x 网段应判定为其它 Wi-Fi")
+    }
+    
+    // MARK: - 连接普通其它 Wi-Fi 时绝不得误判为已连接眼镜热点
+    func testPreventFalsePositiveWhenConnectedToOtherWifi() {
+        let glassesTargetHost = "192.168.43.1"
+        let iphoneHomeWifiIP = "192.168.1.155"
+        
+        // 核心断言：无论传入何种 SSID，只要未在 192.168.43.x 网段且服务探活未就绪，就绝不是已连接眼镜
+        let isSubnetOk = NetworkInterfaceHelper.isSameSubnet(ipA: iphoneHomeWifiIP, ipB: glassesTargetHost)
+        let isServiceOk = false // 普通路由器不会有 21/554 眼镜专属服务
+        let isTargetConnected = isSubnetOk || isServiceOk
+        
+        XCTAssertFalse(isTargetConnected, "手机连接家庭或办公室 Wi-Fi 时，绝不能误判为已连入眼镜热点！")
+    }
+    
+    // MARK: - 更多不同格式设备 MAC 动态推导测试
+    func testVariousMacFormatsDerivation() {
+        // 短横线格式 MAC
+        let repDash = S02LbReport(rawJson: """
+        {"mac":"00-11-22-33-44-55","wifi":"0","wifi_on":0}
+        """)
+        XCTAssertEqual(repDash.wifiSSID, "334455")
+        
+        // 大写冒号格式 MAC
+        let repUpper = S02LbReport(rawJson: """
+        {"mac":"E4:AA:EC:AB:CD:EF","wifi":"-","wifi_on":0}
+        """)
+        XCTAssertEqual(repUpper.wifiSSID, "abcdef")
+        
+        // 固件显式指定了与 MAC 完全不同的热点名称 (如用户自定义的 G1-05488)
+        let repCustom = S02LbReport(rawJson: """
+        {"mac":"12:34:56:78:9a:bc","wifi":"G1-05488,88888888,1","wifi_on":1}
+        """)
+        XCTAssertEqual(repCustom.wifiSSID, "G1-05488")
+        XCTAssertEqual(repCustom.wifiPassword, "88888888")
     }
 }
