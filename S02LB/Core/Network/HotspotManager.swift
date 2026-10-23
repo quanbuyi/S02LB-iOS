@@ -54,27 +54,29 @@ public final class HotspotManager: ObservableObject {
     private func startNetworkPathMonitor() {
         pathMonitor.pathUpdateHandler = { [weak self] path in
             guard let self = self else { return }
-            let isWifi = path.status == .satisfied && path.usesInterfaceType(.wifi)
             let ip = NetworkInterfaceHelper.getWifiIPv4Address()
+            let hasValidIp = (ip != nil && !ip!.isEmpty && ip != "0.0.0.0")
+            
+            // 关键：专用设备 Wi-Fi 无互联网连接时，path.status 在开启蜂窝网络时可能不是 .satisfied！
+            // 只要物理网卡 en0 已分配有效 IPv4 地址，即代表 Wi-Fi 硬件物理链路已建立。
+            let isWifi = (path.status == .satisfied && path.usesInterfaceType(.wifi)) || hasValidIp
             
             DispatchQueue.main.async {
                 self.isAnyWifiActive = isWifi
                 self.currentWifiIP = ip
                 
-                // 初步子网探测：若当前已接入 Wi-Fi 且 IP 位于 192.168.43.x，判定为已在眼镜热点
+                // 子网探测：若当前 en0 网卡 IP 位于 192.168.43.x，判定为已在眼镜热点
                 let isSubnetMatch = NetworkInterfaceHelper.isSameSubnet(ipA: ip, ipB: "192.168.43.1")
-                let targetConnected = isWifi && isSubnetMatch
+                let targetConnected = isSubnetMatch
                 
                 self.isTargetHotspotConnected = targetConnected
                 self.isWifiActive = targetConnected
                 self.isOtherWifiConnected = isWifi && !targetConnected
                 
-                if isWifi {
-                    if targetConnected {
-                        S02Logger.shared.log("Wi-Fi 链路状态更新: 已接入眼镜热点 (IP: \(ip ?? "-"))", tag: "Hotspot")
-                    } else {
-                        S02Logger.shared.log("Wi-Fi 链路状态更新: 当前连接其它 Wi-Fi (IP: \(ip ?? "-"))，未接入眼镜热点", tag: "Hotspot")
-                    }
+                if targetConnected {
+                    S02Logger.shared.log("Wi-Fi 链路状态更新: 已接入眼镜专属热点 (IP: \(ip ?? "-"))", tag: "Hotspot")
+                } else if isWifi {
+                    S02Logger.shared.log("Wi-Fi 链路状态更新: 当前连接其它 Wi-Fi (IP: \(ip ?? "-"))，未接入眼镜热点", tag: "Hotspot")
                 } else {
                     S02Logger.shared.log("Wi-Fi 链路状态更新: 无 Wi-Fi 连接", tag: "Hotspot")
                 }
@@ -88,17 +90,19 @@ public final class HotspotManager: ObservableObject {
     /// 根据当前 IP 与探测状态，严格区分是接入了眼镜专属热点还是连接了其它 Wi-Fi
     public func evaluateConnection(targetSSID: String, targetHost: String, isServiceReachable: Bool) {
         let ip = NetworkInterfaceHelper.getWifiIPv4Address()
+        let hasValidIp = (ip != nil && !ip!.isEmpty && ip != "0.0.0.0")
+        let isWifi = self.isAnyWifiActive || hasValidIp
         let isSubnetMatch = NetworkInterfaceHelper.isSameSubnet(ipA: ip, ipB: targetHost)
         
-        // 核心铁律：只有手机处于 Wi-Fi 状态且 (IP 处于 192.168.43.x 或 FTP/RTSP 服务可达) 时，才算接入眼镜热点！
-        // 绝对不得仅凭客户端记录的 SSID 变量做判定，杜绝连接家庭/办公 Wi-Fi 时误判！
-        let targetConnected = self.isAnyWifiActive && (isServiceReachable || isSubnetMatch)
+        // 核心铁律：只要 en0 IP 处于 targetHost 同子网 (192.168.43.x) 或者 FTP/RTSP 服务可达，100% 确认接入眼镜热点！
+        let targetConnected = isServiceReachable || isSubnetMatch
         
         DispatchQueue.main.async {
             self.currentWifiIP = ip
+            self.isAnyWifiActive = isWifi
             self.isTargetHotspotConnected = targetConnected
             self.isWifiActive = targetConnected
-            self.isOtherWifiConnected = self.isAnyWifiActive && !targetConnected
+            self.isOtherWifiConnected = isWifi && !targetConnected
         }
     }
     
@@ -137,18 +141,14 @@ public final class HotspotManager: ObservableObject {
         
         S02Logger.shared.log("请求通过 NEHotspotConfiguration 加入热点: \(ssid)", tag: "Hotspot")
         
-        // 先清理该热点可能存在的旧残留配置，避免系统 helper 抛出 Code 8 内部错误
-        NEHotspotConfigurationManager.shared.removeConfiguration(forSSID: ssid)
-        try? await Task.sleep(nanoseconds: 80_000_000)
-        
         let config: NEHotspotConfiguration
         if passphrase.isEmpty {
             config = NEHotspotConfiguration(ssid: ssid)
         } else {
             config = NEHotspotConfiguration(ssid: ssid, passphrase: passphrase, isWEP: false)
         }
-        // 设置为 true 避免写入持久化 Keychain 导致系统配置冲突与 Code 8
-        config.joinOnce = true
+        // 设置为 false 保持系统对热点的连接会话，避免在无互联网环境下被 iOS 强行切断或丢弃
+        config.joinOnce = false
         
         return try await withCheckedThrowingContinuation { continuation in
             NEHotspotConfigurationManager.shared.apply(config) { [weak self] error in

@@ -312,7 +312,12 @@ public final class WifiRtspCoordinator: ObservableObject {
         Task {
             do {
                 try await self.hotspotManager.connectToHotspot(ssid: ssid, passphrase: password)
-                S02Logger.shared.log("【热点关联成功】系统已成功关联至: \(ssid)", tag: "WiFiFlow")
+                S02Logger.shared.log("【热点关联成功】系统已成功关联至: \(ssid)，重置超时保护计时器...", tag: "WiFiFlow")
+                await MainActor.run {
+                    // 用户在弹窗确认后，重新赋予充足的 flowTimeout 时间用于 DHCP 与服务就绪
+                    self.deadlineDate = Date().addingTimeInterval(self.flowTimeout)
+                    self.triggerServiceProbe()
+                }
             } catch {
                 S02Logger.shared.log("【热点关联异常】\(error.localizedDescription)", tag: "WiFiFlow")
                 await MainActor.run {
@@ -395,12 +400,15 @@ public final class WifiRtspCoordinator: ObservableObject {
             let ssid = self.resolvedSSID
             let pass = self.resolvedPassword
             
-            // 严格按 8 秒间隔有界重发（最多 4 次），彻底消除命令风暴
-            if now >= nextWifiDate && wifiSends < maxWifiSends {
-                wifiSends += 1
-                nextWifiDate = now.addingTimeInterval(retryInterval)
-                S02Logger.shared.log("下发开启 WiFi 传输命令 (\(wifiSends)/\(maxWifiSends))...", tag: "WiFiFlow")
-                bleManager.send(command: .setWifiOn)
+            // 严格防护：只要硬件热点已经就绪正在广播 (isHotspotHardwareReady == true)，
+            // 绝对严禁重复下发开启 WiFi 命令，否则会导致固件 AP 进程不断软重启，致使正在握手的手机断线或无法获取 IP！
+            if !isHotspotHardwareReady {
+                if now >= nextWifiDate && wifiSends < maxWifiSends {
+                    wifiSends += 1
+                    nextWifiDate = now.addingTimeInterval(retryInterval)
+                    S02Logger.shared.log("下发开启 WiFi 传输命令 (\(wifiSends)/\(maxWifiSends))...", tag: "WiFiFlow")
+                    bleManager.send(command: .setWifiOn)
+                }
             }
             
             if isHotspotHardwareReady {
@@ -453,7 +461,11 @@ public final class WifiRtspCoordinator: ObservableObject {
     // MARK: - 服务探测执行
     
     private func triggerServiceProbe() {
-        guard !isProbing, hotspotManager.isAnyWifiActive else { return }
+        guard !isProbing else { return }
+        let ip = hotspotManager.currentWifiIP ?? NetworkInterfaceHelper.getWifiIPv4Address()
+        let hasIp = (ip != nil && !ip!.isEmpty && ip != "0.0.0.0")
+        guard hotspotManager.isAnyWifiActive || hasIp else { return }
+        
         isProbing = true
         let currentToken = generation
         let currentUrl = self.rtspUrl

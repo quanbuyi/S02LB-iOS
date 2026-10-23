@@ -128,4 +128,14 @@ final class S02LBNetworkTests: XCTestCase {
         XCTAssertEqual(repCustom.wifiSSID, "G1-05488")
         XCTAssertEqual(repCustom.wifiPassword, "88888888")
     }
+    
+    // MARK: - 专用硬件无互联网热点判定测试
+    func testPrivateHotspotWithoutInternetDetection() {
+        let glassesCameraIP = "192.168.43.1"
+        let assignedHotspotIP = "192.168.43.15"
+        
+        // 即使系统网络路径 status != .satisfied (因为相机无外网)，物理网卡分配到的 192.168.43.x 依然 100% 确认接入
+        let isSubnetMatch = NetworkInterfaceHelper.isSameSubnet(ipA: assignedHotspotIP, ipB: glassesCameraIP)
+        XCTAssertTrue(isSubnetMatch, "无外网专用热点下，分配的 192.168.43.x 必须确认连通")
+    }
 }
