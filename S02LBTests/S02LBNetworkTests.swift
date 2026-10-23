@@ -55,4 +55,42 @@ final class S02LBNetworkTests: XCTestCase {
         XCTAssertEqual(repOff.wifiOn, 0)
         XCTAssertFalse(repOff.isWifiApReady, "wifi_on=0 时不得盲目发起连接")
     }
+    
+    // MARK: - 动态 MAC 地址派生热点 SSID 测试 (避免固死某特定 SSID)
+    func testDynamicMacSsidDerivation() {
+        // 场景 A: 固件尚未开启 WiFi 仅上报 MAC 地址，自动提取 MAC 后六位
+        let repA = S02LbReport(rawJson: """
+        {"mac":"12:34:56:78:9a:bc","wifi":"0","wifi_on":0}
+        """)
+        XCTAssertEqual(repA.wifiSSID, "789abc", "必须从 MAC 地址动态派生后六位")
+        
+        // 场景 B: 另一台不同 MAC 的设备
+        let repB = S02LbReport(rawJson: """
+        {"mac":"AA:BB:CC:DD:EE:FF","wifi":"-","wifi_on":0}
+        """)
+        XCTAssertEqual(repB.wifiSSID, "ddeeff", "必须支持不同设备 MAC 动态派生")
+        
+        // 场景 C: 固件显式上报了 SSID，优先使用上报的 SSID
+        let repC = S02LbReport(rawJson: """
+        {"mac":"12:34:56:78:9a:bc","wifi":"CAM-998877,12345678,1","wifi_on":1}
+        """)
+        XCTAssertEqual(repC.wifiSSID, "CAM-998877", "显式上报时优先使用显式 SSID")
+    }
+    
+    // MARK: - 本地网络接口子网判定测试 (区分眼镜专属热点与普通家庭/办公 Wi-Fi)
+    func testNetworkInterfaceSubnetMatching() {
+        let glassesCameraIP = "192.168.43.1"
+        
+        // 场景 1: 手机连入了眼镜热点，分配到了 192.168.43.x 的 IP
+        let hotspotAssignedIP = "192.168.43.15"
+        XCTAssertTrue(NetworkInterfaceHelper.isSameSubnet(ipA: hotspotAssignedIP, ipB: glassesCameraIP), "192.168.43.x 网段应判定为眼镜热点局域网")
+        
+        // 场景 2: 手机连接了家庭/办公 Wi-Fi (如 192.168.1.x)
+        let homeWifiIP = "192.168.1.108"
+        XCTAssertFalse(NetworkInterfaceHelper.isSameSubnet(ipA: homeWifiIP, ipB: glassesCameraIP), "192.168.1.x 应判定为其它 Wi-Fi，不得误判为已连接眼镜")
+        
+        // 场景 3: 手机连接了企业网 (如 10.0.0.x)
+        let corpWifiIP = "10.0.0.55"
+        XCTAssertFalse(NetworkInterfaceHelper.isSameSubnet(ipA: corpWifiIP, ipB: glassesCameraIP), "10.x 网段应判定为其它 Wi-Fi")
+    }
 }

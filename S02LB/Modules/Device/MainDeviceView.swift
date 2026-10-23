@@ -203,9 +203,15 @@ public struct MainDeviceView: View {
             VStack(alignment: .leading, spacing: 8) {
                 // 状态指示条
                 HStack(spacing: 8) {
-                    badge(title: "Wi-Fi 接入", active: hotspot.isWifiActive)
-                    badge(title: "FTP (21)", active: coordinator.isFtpReady)
-                    badge(title: "RTSP (554)", active: coordinator.isRtspReady)
+                    if hotspot.isTargetHotspotConnected {
+                        badge(title: "眼镜 Wi-Fi", active: true, activeColor: .green)
+                    } else if hotspot.isOtherWifiConnected {
+                        badge(title: "其它 Wi-Fi", active: true, activeColor: .orange)
+                    } else {
+                        badge(title: "Wi-Fi 未连", active: false)
+                    }
+                    badge(title: "FTP (21)", active: coordinator.isFtpReady, activeColor: .green)
+                    badge(title: "RTSP (554)", active: coordinator.isRtspReady, activeColor: .green)
                 }
                 
                 // 状态机实时提示
@@ -253,21 +259,35 @@ public struct MainDeviceView: View {
                         }) {
                             HStack {
                                 Image(systemName: "wifi")
-                                Text(hotspot.isWifiActive ? "Wi-Fi 已连通 (点击查看)" : "前往系统设置连接【\(coordinator.currentTargetSSID)】")
-                                    .fontWeight(.medium)
+                                if hotspot.isTargetHotspotConnected {
+                                    Text("已连入眼镜热点【\(coordinator.currentTargetSSID)】(IP: \(hotspot.currentWifiIP ?? "-"))")
+                                        .fontWeight(.medium)
+                                } else if hotspot.isOtherWifiConnected {
+                                    Text("⚠️ 当前连接其它 Wi-Fi，点击切换至【\(coordinator.currentTargetSSID)】")
+                                        .fontWeight(.medium)
+                                } else {
+                                    Text("前往系统设置连接【\(coordinator.currentTargetSSID)】")
+                                        .fontWeight(.medium)
+                                }
                             }
                             .font(.caption)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
-                            .background(hotspot.isWifiActive ? Color.green.opacity(0.15) : Color.orange.opacity(0.2))
-                            .foregroundColor(hotspot.isWifiActive ? .green : .orange)
+                            .background(hotspot.isTargetHotspotConnected ? Color.green.opacity(0.15) : Color.orange.opacity(0.2))
+                            .foregroundColor(hotspot.isTargetHotspotConnected ? .green : .orange)
                             .cornerRadius(6)
                         }
                         
-                        if coordinator.isHotspotHardwareReady && !hotspot.isWifiActive {
-                            Text("💡 眼镜热点已就绪。若 iOS 未自动弹出加入窗口，请点击上方橙色按钮前往系统 Wi-Fi 列表选择【\(coordinator.currentTargetSSID)】连接")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
+                        if coordinator.isHotspotHardwareReady && !hotspot.isTargetHotspotConnected {
+                            if hotspot.isOtherWifiConnected {
+                                Text("⚠️ 手机当前正连接其它 Wi-Fi (IP: \(hotspot.currentWifiIP ?? "-"))，未连接眼镜热点！已自动复制密码 \(coordinator.currentTargetPassword)，请点击上方按钮切换到【\(coordinator.currentTargetSSID)】")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.orange)
+                            } else {
+                                Text("💡 眼镜热点已就绪。若 iOS 未自动弹出加入窗口，请点击上方橙色按钮前往系统 Wi-Fi 列表选择【\(coordinator.currentTargetSSID)】连接")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
                     .padding(10)
@@ -335,10 +355,10 @@ public struct MainDeviceView: View {
         }
     }
     
-    private func badge(title: String, active: Bool) -> some View {
+    private func badge(title: String, active: Bool, activeColor: Color = .green) -> some View {
         HStack(spacing: 4) {
             Circle()
-                .fill(active ? Color.green : Color.gray.opacity(0.5))
+                .fill(active ? activeColor : Color.gray.opacity(0.5))
                 .frame(width: 8, height: 8)
             Text(title)
                 .font(.caption2)

@@ -300,8 +300,8 @@ public final class WifiRtspCoordinator: ObservableObject {
     
     private func triggerHotspotJoin(ssid: String, password: String) {
         guard !ssid.isEmpty else { return }
-        guard !hotspotManager.isWifiActive else {
-            S02Logger.shared.log("手机当前已接入 Wi-Fi 链路，无需重复发起系统加入: \(ssid)", tag: "WiFiFlow")
+        guard !hotspotManager.isTargetHotspotConnected else {
+            S02Logger.shared.log("手机已接入眼镜专属热点，无需重复加入: \(ssid)", tag: "WiFiFlow")
             return
         }
         guard !hotspotJoinAttemptedForCurrentSession else { return }
@@ -346,6 +346,9 @@ public final class WifiRtspCoordinator: ObservableObject {
         }
         
         let now = Date()
+        
+        let targetHost = URL(string: self.rtspUrl)?.host ?? "192.168.43.1"
+        hotspotManager.evaluateConnection(targetSSID: self.resolvedSSID, targetHost: targetHost, isServiceReachable: self.isFtpReady || self.isRtspReady)
         
         // 0. 流程超时检查
         if now >= deadlineDate {
@@ -401,11 +404,15 @@ public final class WifiRtspCoordinator: ObservableObject {
             }
             
             if isHotspotHardwareReady {
-                if !hotspotManager.isWifiActive {
-                    show("眼镜热点已就绪 [\(ssid)]！若未自动加入，请前往系统 Wi-Fi 连接", isError: false)
+                if !hotspotManager.isTargetHotspotConnected {
+                    if hotspotManager.isOtherWifiConnected {
+                        show("当前连接其它 Wi-Fi (IP: \(hotspotManager.currentWifiIP ?? "-"))，请切换至眼镜热点 [\(ssid)]", isError: false)
+                    } else {
+                        show("眼镜热点已就绪 [\(ssid)]！若未自动加入，请前往系统 Wi-Fi 连接", isError: false)
+                    }
                     triggerHotspotJoin(ssid: ssid, password: pass)
                 } else {
-                    show("已成功接入 Wi-Fi [\(ssid)]，正在探测相机服务...", isError: false)
+                    show("已成功接入眼镜热点 [\(ssid)]，正在探测相机服务...", isError: false)
                 }
             } else {
                 if !ssid.isEmpty {
@@ -446,7 +453,7 @@ public final class WifiRtspCoordinator: ObservableObject {
     // MARK: - 服务探测执行
     
     private func triggerServiceProbe() {
-        guard !isProbing, hotspotManager.isWifiActive else { return }
+        guard !isProbing, hotspotManager.isAnyWifiActive else { return }
         isProbing = true
         let currentToken = generation
         let currentUrl = self.rtspUrl
@@ -470,6 +477,11 @@ public final class WifiRtspCoordinator: ObservableObject {
                 
                 self.isFtpReady = ftpOk
                 self.isRtspReady = finalRtspOk
+                
+                // 只要 FTP 或 RTSP 成功响应，即刻确认为已连接眼镜专属热点！
+                if ftpOk || finalRtspOk {
+                    self.hotspotManager.markTargetHotspotConnected(true)
+                }
                 
                 if ftpOk && !wanted && self.phase == .waitAp {
                     self.begin(phase: .ready)

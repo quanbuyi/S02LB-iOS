@@ -65,12 +65,22 @@ public struct S02LbReport {
     public var wifiSSID: String? {
         let trimmed = wifi.trimmingCharacters(in: .whitespacesAndNewlines)
         // 过滤非有效配置: "0"、"-" 或空 (未开启/未就绪时固件返回 "0")
-        guard !trimmed.isEmpty, trimmed != "-", trimmed != "0" else { return nil }
-        let parts = trimmed.split(separator: ",", omittingEmptySubsequences: false).map { String($0).trimmingCharacters(in: .whitespaces) }
-        guard parts.count >= 2 else { return nil }
-        let first = parts[0]
-        guard !first.isEmpty, first != "0", first != "-" else { return nil }
-        return first
+        if !trimmed.isEmpty, trimmed != "-", trimmed != "0" {
+            let parts = trimmed.split(separator: ",", omittingEmptySubsequences: false).map { String($0).trimmingCharacters(in: .whitespaces) }
+            if parts.count >= 2 {
+                let first = parts[0]
+                if !first.isEmpty, first != "0", first != "-" {
+                    return first
+                }
+            }
+        }
+        
+        // 固件未上报 wifi 字段时的动态推导：根据当前设备 MAC 地址后六位派生热点名 (如 "12:34:56:78:9a:bc" -> "789abc")
+        let cleanMac = mac.replacingOccurrences(of: ":", with: "").replacingOccurrences(of: "-", with: "").trimmingCharacters(in: .whitespaces)
+        if cleanMac.count >= 6 && cleanMac != "-" {
+            return String(cleanMac.suffix(6)).lowercased()
+        }
+        return nil
     }
     
     public var wifiPassword: String? {

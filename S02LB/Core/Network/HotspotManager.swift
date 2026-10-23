@@ -15,7 +15,22 @@ public final class HotspotManager: ObservableObject {
     public static let shared = HotspotManager()
     
     // MARK: - 响应式属性
+    
+    /// 手机当前是否已接入任意 Wi-Fi (包括家庭/办公室路由器)
+    @Published public private(set) var isAnyWifiActive: Bool = false
+    
+    /// 手机当前在 en0 网卡获取到的 Wi-Fi IPv4 地址 (如 192.168.43.15 或 192.168.1.108)
+    @Published public private(set) var currentWifiIP: String? = nil
+    
+    /// 手机当前是否已真正连入眼镜专属热点 (经 192.168.43.x 子网校验、SSID比对或服务探测确认)
+    @Published public private(set) var isTargetHotspotConnected: Bool = false
+    
+    /// 手机当前是否连接了非眼镜热点的其它 Wi-Fi (如家庭/办公网络)
+    @Published public private(set) var isOtherWifiConnected: Bool = false
+    
+    /// 兼容旧属性：仅在真正连入眼镜专属热点时为 true
     @Published public private(set) var isWifiActive: Bool = false
+    
     @Published public private(set) var currentSSID: String? = nil
     @Published public private(set) var isConnectingHotspot: Bool = false
     @Published public private(set) var lastError: String? = nil
@@ -37,12 +52,59 @@ public final class HotspotManager: ObservableObject {
         pathMonitor.pathUpdateHandler = { [weak self] path in
             guard let self = self else { return }
             let isWifi = path.status == .satisfied && path.usesInterfaceType(.wifi)
+            let ip = NetworkInterfaceHelper.getWifiIPv4Address()
+            
             DispatchQueue.main.async {
-                self.isWifiActive = isWifi
-                S02Logger.shared.log("Wi-Fi 链路状态更新: \(isWifi ? "已接入 Wi-Fi" : "无 Wi-Fi 连接")", tag: "Hotspot")
+                self.isAnyWifiActive = isWifi
+                self.currentWifiIP = ip
+                
+                // 初步子网探测：若当前已接入 Wi-Fi 且 IP 位于 192.168.43.x，判定为已在眼镜热点
+                let isSubnetMatch = NetworkInterfaceHelper.isSameSubnet(ipA: ip, ipB: "192.168.43.1")
+                let targetConnected = isWifi && isSubnetMatch
+                
+                self.isTargetHotspotConnected = targetConnected
+                self.isWifiActive = targetConnected
+                self.isOtherWifiConnected = isWifi && !targetConnected
+                
+                if isWifi {
+                    if targetConnected {
+                        S02Logger.shared.log("Wi-Fi 链路状态更新: 已接入眼镜热点 (IP: \(ip ?? "-"))", tag: "Hotspot")
+                    } else {
+                        S02Logger.shared.log("Wi-Fi 链路状态更新: 当前连接其它 Wi-Fi (IP: \(ip ?? "-"))，未接入眼镜热点", tag: "Hotspot")
+                    }
+                } else {
+                    S02Logger.shared.log("Wi-Fi 链路状态更新: 无 Wi-Fi 连接", tag: "Hotspot")
+                }
             }
         }
         pathMonitor.start(queue: monitorQueue)
+    }
+    
+    // MARK: - 评估与更新连接状态 (支持动态 SSID 与 IP 交叉校验)
+    
+    /// 根据当前 IP 与探测状态，严格区分是接入了眼镜专属热点还是连接了其它 Wi-Fi
+    public func evaluateConnection(targetSSID: String, targetHost: String, isServiceReachable: Bool) {
+        let ip = NetworkInterfaceHelper.getWifiIPv4Address()
+        let isSubnetMatch = NetworkInterfaceHelper.isSameSubnet(ipA: ip, ipB: targetHost)
+        let isSsidMatch = (self.currentSSID != nil && !targetSSID.isEmpty && self.currentSSID == targetSSID)
+        
+        let targetConnected = isServiceReachable || isSsidMatch || isSubnetMatch
+        
+        DispatchQueue.main.async {
+            self.currentWifiIP = ip
+            self.isTargetHotspotConnected = targetConnected
+            self.isWifiActive = targetConnected
+            self.isOtherWifiConnected = self.isAnyWifiActive && !targetConnected
+        }
+    }
+    
+    /// 当服务探测器确认连通时主动标记
+    public func markTargetHotspotConnected(_ connected: Bool) {
+        DispatchQueue.main.async {
+            self.isTargetHotspotConnected = connected
+            self.isWifiActive = connected
+            self.isOtherWifiConnected = self.isAnyWifiActive && !connected
+        }
     }
     
     // MARK: - 自动连接眼镜热点
@@ -96,6 +158,9 @@ public final class HotspotManager: ObservableObject {
                         if nsErr.domain == NEHotspotConfigurationErrorDomain && nsErr.code == 13 {
                             S02Logger.shared.log("已关联到该热点 (\(ssid))", tag: "Hotspot")
                             self.currentSSID = ssid
+                            self.isTargetHotspotConnected = true
+                            self.isWifiActive = true
+                            self.isOtherWifiConnected = false
                             continuation.resume()
                             return
                         }
@@ -107,6 +172,9 @@ public final class HotspotManager: ObservableObject {
                     } else {
                         S02Logger.shared.log("已成功提交加入 Wi-Fi 热点请求: \(ssid)", tag: "Hotspot")
                         self.currentSSID = ssid
+                        self.isTargetHotspotConnected = true
+                        self.isWifiActive = true
+                        self.isOtherWifiConnected = false
                         continuation.resume()
                     }
                 }
@@ -153,6 +221,8 @@ public final class HotspotManager: ObservableObject {
             if self.currentSSID == ssid {
                 self.currentSSID = nil
             }
+            self.isTargetHotspotConnected = false
+            self.isWifiActive = false
         }
     }
 }
