@@ -67,7 +67,7 @@ public struct S02LbReport {
         // 过滤非有效配置: "0"、"-" 或空 (未开启/未就绪时固件返回 "0")
         if !trimmed.isEmpty, trimmed != "-", trimmed != "0" {
             let parts = trimmed.split(separator: ",", omittingEmptySubsequences: false).map { String($0).trimmingCharacters(in: .whitespaces) }
-            if parts.count >= 2 {
+            if parts.count >= 1 {
                 let first = parts[0]
                 if !first.isEmpty, first != "0", first != "-" {
                     return first
@@ -85,12 +85,15 @@ public struct S02LbReport {
     
     public var wifiPassword: String? {
         let trimmed = wifi.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != "-", trimmed != "0" else { return nil }
+        guard !trimmed.isEmpty, trimmed != "-", trimmed != "0" else { return "12345678" }
         let parts = trimmed.split(separator: ",", omittingEmptySubsequences: false).map { String($0).trimmingCharacters(in: .whitespaces) }
-        guard parts.count >= 2 else { return nil }
-        let second = parts[1]
-        guard !second.isEmpty, second != "0" else { return nil }
-        return second
+        if parts.count >= 2 {
+            let second = parts[1]
+            if !second.isEmpty, second != "0", second != "-" {
+                return second
+            }
+        }
+        return "12345678"
     }
     
     /// 热点是否已处于已配置/已开启状态
