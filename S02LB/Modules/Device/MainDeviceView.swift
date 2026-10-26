@@ -296,6 +296,10 @@ public struct MainDeviceView: View {
                                 Text("⚠️ 手机当前正连接其它 Wi-Fi (IP: \(hotspot.currentWifiIP ?? "-"))，未连接眼镜热点！已自动复制密码 \(coordinator.currentTargetPassword)，请点击上方按钮切换到【\(coordinator.currentTargetSSID)】")
                                     .font(.system(size: 11))
                                     .foregroundColor(.orange)
+                            } else if NetworkInterfaceHelper.getAllNetworkInterfacesSummary().contains("169.254.") {
+                                Text("⚠️ 检测到 IP 为 169.254.x.x (眼镜热点未响应 DHCP)，请点击上方按钮前往系统 Wi-Fi，关闭【私有无线局域网地址】或将配置 IP 设为手动 (192.168.43.15)")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.red)
                             } else {
                                 Text("💡 眼镜热点已就绪。若 iOS 未自动弹出加入窗口，请点击上方橙色按钮前往系统 Wi-Fi 列表选择【\(coordinator.currentTargetSSID)】连接")
                                     .font(.system(size: 11))

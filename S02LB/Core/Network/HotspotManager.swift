@@ -99,6 +99,9 @@ public final class HotspotManager: ObservableObject {
         if summary != self.lastEvaluatedSummary {
             self.lastEvaluatedSummary = summary
             S02Logger.shared.log("物理网络接口变更: [\(summary)] (当前Wi-Fi IP: \(ip ?? "无"))", tag: "Hotspot")
+            if summary.contains("169.254.") {
+                S02Logger.shared.log("⚠️ 物理网卡处于 169.254.x.x 自给地址 (眼镜热点未响应 DHCP)，建议关闭 iOS【私有无线局域网地址】或配置手动静态 IP (192.168.43.15)", tag: "Hotspot")
+            }
         }
         
         // 核心铁律：只要 en0/en1 IP 处于 targetHost 同子网 (192.168.43.x) 或者 FTP/RTSP 服务可达，100% 确认接入眼镜热点！

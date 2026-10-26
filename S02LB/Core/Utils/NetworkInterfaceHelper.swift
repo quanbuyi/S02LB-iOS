@@ -26,7 +26,7 @@ public struct NetworkInterfaceHelper {
                                    &hostname, socklen_t(hostname.count),
                                    nil, 0, NI_NUMERICHOST) == 0 {
                         let ip = String(cString: hostname)
-                        if !ip.isEmpty && ip != "0.0.0.0" && !ip.hasPrefix("127.") {
+                        if !ip.isEmpty && ip != "0.0.0.0" && !ip.hasPrefix("127.") && !ip.hasPrefix("169.254.") {
                             // 若直接匹配眼镜默认热点网段 192.168.43.x，立即优先返回！
                             if isSameSubnet(ipA: ip, ipB: "192.168.43.1") {
                                 return ip
