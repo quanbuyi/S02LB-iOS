@@ -401,8 +401,9 @@ public final class WifiRtspCoordinator: ObservableObject {
             let pass = self.resolvedPassword
             
             // 严格防护：只要硬件热点已经就绪正在广播 (isHotspotHardwareReady == true)，
+            // 或者已经向系统发起过热点关联申请 (hotspotJoinAttemptedForCurrentSession == true)，
             // 绝对严禁重复下发开启 WiFi 命令，否则会导致固件 AP 进程不断软重启，致使正在握手的手机断线或无法获取 IP！
-            if !isHotspotHardwareReady {
+            if !isHotspotHardwareReady && !hotspotJoinAttemptedForCurrentSession {
                 if now >= nextWifiDate && wifiSends < maxWifiSends {
                     wifiSends += 1
                     nextWifiDate = now.addingTimeInterval(retryInterval)
@@ -526,9 +527,17 @@ public final class WifiRtspCoordinator: ObservableObject {
         // 2. 监测硬件 AP 就绪状态
         let wasReady = self.isHotspotHardwareReady
         let isNowReady = report.isWifiApReady
-        self.isHotspotHardwareReady = isNowReady
         
-        if isNowReady {
+        // 关键防护：硬件 AP 广播状态具有保持性！
+        // 只有当固件明确上报 wifiOn == 0 时才认为热点关闭；当缺省 (-1) 时绝不得将已就绪状态冲刷为 false！
+        if isNowReady || report.wifiOn == 1 {
+            self.isHotspotHardwareReady = true
+        } else if report.wifiOn == 0 {
+            self.isHotspotHardwareReady = false
+        }
+        let isCurrentlyReady = self.isHotspotHardwareReady
+        
+        if isCurrentlyReady {
             // 【自动接管机制】如果硬件 AP 已经就绪（例如开机即开启或断线重连）：
             // 只要用户没有主动点击关闭热点，App 自动接管并立即尝试发起热点连接与探测
             if phase == .off && !userExplicitlyTurnedOff {

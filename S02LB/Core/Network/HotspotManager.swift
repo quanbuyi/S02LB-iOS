@@ -39,6 +39,7 @@ public final class HotspotManager: ObservableObject {
     @Published public var manualConnectionPrompt: (ssid: String, password: String, reason: String)? = nil
     
     private var currentConnectingSSID: String? = nil
+    private var lastEvaluatedSummary: String = ""
     private let pathMonitor = NWPathMonitor(requiredInterfaceType: .wifi)
     private let monitorQueue = DispatchQueue(label: "com.s02lb.hotspot.monitor")
     
@@ -94,7 +95,13 @@ public final class HotspotManager: ObservableObject {
         let isWifi = self.isAnyWifiActive || hasValidIp
         let isSubnetMatch = NetworkInterfaceHelper.isSameSubnet(ipA: ip, ipB: targetHost)
         
-        // 核心铁律：只要 en0 IP 处于 targetHost 同子网 (192.168.43.x) 或者 FTP/RTSP 服务可达，100% 确认接入眼镜热点！
+        let summary = NetworkInterfaceHelper.getAllNetworkInterfacesSummary()
+        if summary != self.lastEvaluatedSummary {
+            self.lastEvaluatedSummary = summary
+            S02Logger.shared.log("物理网络接口变更: [\(summary)] (当前Wi-Fi IP: \(ip ?? "无"))", tag: "Hotspot")
+        }
+        
+        // 核心铁律：只要 en0/en1 IP 处于 targetHost 同子网 (192.168.43.x) 或者 FTP/RTSP 服务可达，100% 确认接入眼镜热点！
         let targetConnected = isServiceReachable || isSubnetMatch
         
         DispatchQueue.main.async {

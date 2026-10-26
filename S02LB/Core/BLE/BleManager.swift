@@ -82,7 +82,7 @@ public final class BleManager: NSObject, ObservableObject {
             let currentKey = "\(report.soc)_\(report.isCharging)_\(report.wifi)_\(report.wifiOn)_\(report.rtsp)_\(report.fan)_\(report.isRecording)"
             if currentKey != self.lastReportKey {
                 self.lastReportKey = currentKey
-                self.log("收到设备状态更新: 电量=\(report.soc)% 充电=\(report.charge) 热点=\(report.wifiSSID ?? "-")(wifi_on=\(report.wifiOn)) RTSP=\(report.rtsp)")
+                self.log("收到设备状态更新: 电量=\(report.soc)% 充电=\(report.charge) 固件wifi='\(report.wifi)' wifi_on=\(report.wifiOn) 热点SSID=\(report.wifiSSID ?? "-") MAC=\(report.mac) RTSP=\(report.rtsp)")
             }
             DispatchQueue.main.async {
                 self.latestReport = report

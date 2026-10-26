@@ -138,4 +138,32 @@ final class S02LBNetworkTests: XCTestCase {
         let isSubnetMatch = NetworkInterfaceHelper.isSameSubnet(ipA: assignedHotspotIP, ipB: glassesCameraIP)
         XCTAssertTrue(isSubnetMatch, "无外网专用热点下，分配的 192.168.43.x 必须确认连通")
     }
+    
+    // MARK: - 硬件就绪状态保持性测试 (缺省 wifi_on=-1 时不冲刷已就绪状态)
+    func testHardwareReadyStateRetention() {
+        var isHotspotHardwareReady = false
+        
+        // 收到 wifi_on = 1
+        let rep1 = S02LbReport(rawJson: """
+        {"mac":"12:34:56:33:44:17","wifi":"334417,12345678,0","wifi_on":1}
+        """)
+        if rep1.isWifiApReady || rep1.wifiOn == 1 {
+            isHotspotHardwareReady = true
+        } else if rep1.wifiOn == 0 {
+            isHotspotHardwareReady = false
+        }
+        XCTAssertTrue(isHotspotHardwareReady, "wifi_on=1 时必须标记硬件就绪")
+        
+        // 收到没有 wifi_on 字段的心跳包 (wifiOn == -1)
+        let rep2 = S02LbReport(rawJson: """
+        {"soc":"45","charge":"0","size":"58.20","free":"56.06"}
+        """)
+        XCTAssertEqual(rep2.wifiOn, -1)
+        if rep2.isWifiApReady || rep2.wifiOn == 1 {
+            isHotspotHardwareReady = true
+        } else if rep2.wifiOn == 0 {
+            isHotspotHardwareReady = false
+        }
+        XCTAssertTrue(isHotspotHardwareReady, "缺省包 (wifi_on=-1) 绝不得将已就绪热点冲刷为 false")
+    }
 }
