@@ -242,7 +242,18 @@ public final class WifiRtspCoordinator: ObservableObject {
         previewWanted = preview
         generation += 1
         
-        if phase == .off || phase == .failed {
+        // 若此时热点物理链路已经连通 (isTargetHotspotConnected == true)
+        if hotspotManager.isTargetHotspotConnected {
+            S02Logger.shared.log("热点物理链路已就绪，立即进入等待推流状态并下发 CMD_RTSP_START...", tag: "WiFiFlow")
+            begin(phase: .waitRtsp)
+            startSends = 1
+            nextStartDate = Date().addingTimeInterval(retryInterval)
+            bleManager.send(command: .rtspStart)
+            triggerServiceProbe()
+            return
+        }
+        
+        if phase == .off || phase == .failed || phase == .ready {
             begin(phase: .waitAp)
         }
         
@@ -421,7 +432,17 @@ public final class WifiRtspCoordinator: ObservableObject {
                     }
                     triggerHotspotJoin(ssid: ssid, password: pass)
                 } else {
-                    show("已成功接入眼镜热点 [\(ssid)]，正在探测相机服务...", isError: false)
+                    // 手机已经连接眼镜专属热点 (192.168.43.x)！
+                    if rtspWanted {
+                        S02Logger.shared.log("热点链路已就绪 (IP: \(hotspotManager.currentWifiIP ?? "-"))，立即切换至推流状态并下发启动推流命令...", tag: "WiFiFlow")
+                        begin(phase: .waitRtsp)
+                        startSends = 1
+                        nextStartDate = now.addingTimeInterval(retryInterval)
+                        bleManager.send(command: .rtspStart)
+                    } else {
+                        show("已接入眼镜热点【\(ssid)】(IP: \(hotspotManager.currentWifiIP ?? "-"))，热点就绪", isError: false)
+                        begin(phase: .ready)
+                    }
                 }
             } else {
                 if !ssid.isEmpty {
@@ -551,7 +572,20 @@ public final class WifiRtspCoordinator: ObservableObject {
             }
         }
         
-        // 3. 解析 RTSP 停止结果
+        // 3. 监听固件上报的 RTSP 运行状态 (如 "1,261022152713")
+        let rtspParts = report.rtsp.split(separator: ",")
+        if let first = rtspParts.first, first == "1" {
+            if (phase == .waitRtsp || phase == .waitAp) && rtspWanted {
+                S02Logger.shared.log("收到固件上报 RTSP 已在推流中 (rtsp=\(report.rtsp))，进入推流状态...", tag: "WiFiFlow")
+                self.isRtspReady = true
+                self.begin(phase: .streaming)
+                if self.previewWanted {
+                    self.onStartPlayer?(self.rtspUrl)
+                }
+            }
+        }
+        
+        // 4. 解析 RTSP 停止结果
         if report.rtspStopSequence >= 0 {
             let seq = report.rtspStopSequence
             let res = report.rtspStopResult

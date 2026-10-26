@@ -110,14 +110,10 @@ public final class NetworkServiceProber {
                         // 读取响应
                         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, recvError in
                             if let data = data, let respStr = String(data: data, encoding: .ascii) {
-                                // 校验 RTSP/1.0 200 OK
+                                // 校验 RTSP/1.0 200 OK 响应
                                 if respStr.contains("RTSP/1.0 200") {
-                                    let hasVideo = respStr.contains("m=video")
-                                    let hasCodec = respStr.contains("H264") || respStr.contains("H265") || respStr.contains("sprop-parameter-sets")
-                                    if hasVideo && hasCodec {
-                                        finish(ProbeResult(isReachable: true, detail: "RTSP 流就绪", sdp: respStr))
-                                        return
-                                    }
+                                    finish(ProbeResult(isReachable: true, detail: "RTSP 服务已响应 200 OK", sdp: respStr))
+                                    return
                                 }
                                 finish(ProbeResult(isReachable: false, detail: "未就绪: \(respStr.prefix(60))", sdp: nil))
                             } else {
