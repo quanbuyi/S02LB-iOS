@@ -113,38 +113,42 @@ public final class FtpClient {
     
     // MARK: - 目录与媒体文件列表
     
-    /// 枚举媒体文件 (自动遍历 /PIC_/ 照片目录与 /IMG_/ 录像目录)
+    /// 枚举媒体文件 (自动探测 /PIC_/ 照片目录与 /IMG_/ 录像目录，并兼容相对路径)
     public func listMediaFiles() async throws -> [String] {
         guard isConnected else { throw FtpError.notConnected }
         
         var results: [String] = []
         
-        // 1. 尝试获取 PIC_/ 照片列表
-        do {
-            let pics = try await listDirectory(path: "/PIC_")
-            for f in pics {
-                results.append("PIC_/\(f)")
-            }
-        } catch {
-            S02Logger.shared.log("列出 /PIC_ 异常: \(error.localizedDescription)", tag: "FTP")
+        // 1. 尝试获取 PIC_/ 照片列表 (兼容 /PIC_ 与 PIC_)
+        if let pics = try? await listDirectory(path: "/PIC_"), !pics.isEmpty {
+            for f in pics { results.append("PIC_/\(f)") }
+        } else if let pics = try? await listDirectory(path: "PIC_"), !pics.isEmpty {
+            for f in pics { results.append("PIC_/\(f)") }
         }
         
-        // 2. 尝试获取 IMG_/ 录像列表
-        do {
-            let imgs = try await listDirectory(path: "/IMG_")
-            for f in imgs {
-                results.append("IMG_/\(f)")
-            }
-        } catch {
-            S02Logger.shared.log("列出 /IMG_ 异常: \(error.localizedDescription)", tag: "FTP")
+        // 2. 尝试获取 IMG_/ 录像列表 (兼容 /IMG_ 与 IMG_)
+        if let imgs = try? await listDirectory(path: "/IMG_"), !imgs.isEmpty {
+            for f in imgs { results.append("IMG_/\(f)") }
+        } else if let imgs = try? await listDirectory(path: "IMG_"), !imgs.isEmpty {
+            for f in imgs { results.append("IMG_/\(f)") }
         }
         
         // 3. 兜底扫描根目录
         if results.isEmpty {
-            let root = try await listDirectory(path: "/")
-            results.append(contentsOf: root)
+            if let root = try? await listDirectory(path: "/") {
+                for f in root {
+                    if f.hasPrefix("PIC_") {
+                        results.append("PIC_/\(f)")
+                    } else if f.hasPrefix("IMG_") {
+                        results.append("IMG_/\(f)")
+                    } else {
+                        results.append(f)
+                    }
+                }
+            }
         }
         
+        S02Logger.shared.log("FTP 文件扫描完成，找到 \(results.count) 个文件", tag: "FTP")
         return results
     }
     
@@ -158,16 +162,26 @@ public final class FtpClient {
         // 2. 连接数据通道
         let dataConnection = try await openDataConnection(host: dataHost, port: dataPort)
         
-        // 3. 发送 NLST 指令 (获取简洁文件名列表)
-        let reply = try await sendCommand("NLST \(path)")
+        // 3. 优先发送 LIST 指令 (RFC 959 标准指令，对齐安卓 client.listFiles)，若失败则尝试 NLST
+        var reply = try await sendCommand("LIST \(path)")
+        if !reply.hasPrefix("150") && !reply.hasPrefix("125") {
+            reply = try await sendCommand("NLST \(path)")
+        }
+        
         guard reply.hasPrefix("150") || reply.hasPrefix("125") else {
             dataConnection.cancel()
-            throw FtpError.commandFailed("NLST 失败: \(reply)")
+            if reply.hasPrefix("550") {
+                // 目录不存在或为空 (例如未拍照)，正常返回空列表
+                return []
+            }
+            throw FtpError.commandFailed("获取列表拒绝: \(reply)")
         }
         
         // 4. 从数据通道读取完整列表数据
         let rawData = try await readDataToEnd(connection: dataConnection)
-        _ = try await readReply() // 消费 226 Transfer complete
+        if !reply.contains("226") {
+            _ = try? await readReply() // 消费 226 Transfer complete
+        }
         
         guard let text = String(data: rawData, encoding: .utf8) ?? String(data: rawData, encoding: .ascii) else {
             return []
@@ -181,8 +195,16 @@ public final class FtpClient {
                 if let idx = line.lastIndex(of: "/") {
                     return String(line[line.index(after: idx)...])
                 }
+                // 若为 ls -l 格式 (例如 "-rw-r--r-- 1 root root 12345 PIC_0001.JPG")
+                if line.contains(" ") {
+                    let parts = line.split(separator: " ").map(String.init)
+                    if let last = parts.last, !last.isEmpty {
+                        return last
+                    }
+                }
                 return line
             }
+            .filter { !$0.isEmpty }
         
         return lines
     }
@@ -358,14 +380,29 @@ public final class FtpClient {
         var buffer = Data()
         while true {
             let chunk: Data = try await withCheckedThrowingContinuation { continuation in
-                connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, isComplete, error in
-                    if let err = error {
-                        continuation.resume(throwing: err)
-                    } else if let d = data, !d.isEmpty {
-                        continuation.resume(returning: d)
-                    } else {
-                        continuation.resume(returning: Data())
+                let guardObj = ContinuationGuard()
+                connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, isComplete, error in
+                    // 1. 若收到有效数据片段，正常交付
+                    if let d = data, !d.isEmpty {
+                        guardObj.runOnce { continuation.resume(returning: d) }
+                        return
                     }
+                    // 2. 若对端正常关闭连接 (EOF)，返回空数据退出
+                    if isComplete {
+                        guardObj.runOnce { continuation.resume(returning: Data()) }
+                        return
+                    }
+                    // 3. 处理异常并识别 POSIX 正常 EOF (code 0)
+                    if let err = error {
+                        if case .posix(let posixErr) = err, posixErr.rawValue == 0 {
+                            guardObj.runOnce { continuation.resume(returning: Data()) }
+                            return
+                        }
+                        guardObj.runOnce { continuation.resume(throwing: err) }
+                        return
+                    }
+                    // 4. 其他情况默认返回空数据
+                    guardObj.runOnce { continuation.resume(returning: Data()) }
                 }
             }
             if chunk.isEmpty {
@@ -380,14 +417,29 @@ public final class FtpClient {
     private func streamData(connection: NWConnection, onChunk: @escaping (Data) -> Void) async throws {
         while true {
             let chunk: Data = try await withCheckedThrowingContinuation { continuation in
-                connection.receive(minimumIncompleteLength: 1, maximumLength: 16384) { data, _, isComplete, error in
-                    if let err = error {
-                        continuation.resume(throwing: err)
-                    } else if let d = data, !d.isEmpty {
-                        continuation.resume(returning: d)
-                    } else {
-                        continuation.resume(returning: Data())
+                let guardObj = ContinuationGuard()
+                connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, isComplete, error in
+                    // 1. 若收到有效数据片段，正常交付
+                    if let d = data, !d.isEmpty {
+                        guardObj.runOnce { continuation.resume(returning: d) }
+                        return
                     }
+                    // 2. 若对端正常关闭连接 (EOF)，返回空数据退出
+                    if isComplete {
+                        guardObj.runOnce { continuation.resume(returning: Data()) }
+                        return
+                    }
+                    // 3. 处理异常并识别 POSIX 正常 EOF (code 0)
+                    if let err = error {
+                        if case .posix(let posixErr) = err, posixErr.rawValue == 0 {
+                            guardObj.runOnce { continuation.resume(returning: Data()) }
+                            return
+                        }
+                        guardObj.runOnce { continuation.resume(throwing: err) }
+                        return
+                    }
+                    // 4. 其他情况默认返回空数据
+                    guardObj.runOnce { continuation.resume(returning: Data()) }
                 }
             }
             if chunk.isEmpty {

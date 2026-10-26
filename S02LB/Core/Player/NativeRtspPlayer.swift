@@ -55,6 +55,7 @@ public class NativeRtspPlayer: NSObject, RtspPlayerProtocol {
     
     // 网络与连接
     private var connection: NWConnection?
+    private var udpListener: NWListener?
     private let workerQueue = DispatchQueue(label: "com.s02lb.native.rtsp.queue", qos: .userInitiated)
     private var receiveBuffer = Data()
     
@@ -143,6 +144,9 @@ public class NativeRtspPlayer: NSObject, RtspPlayerProtocol {
             
             self.keepAliveTimer?.cancel()
             self.keepAliveTimer = nil
+            
+            self.udpListener?.cancel()
+            self.udpListener = nil
             
             if let sess = self.sessionId, let conn = self.connection {
                 self.cseq += 1
@@ -350,6 +354,7 @@ public class NativeRtspPlayer: NSObject, RtspPlayerProtocol {
     
     private func handleRtspResponse(_ data: Data) {
         guard let text = String(data: data, encoding: .utf8) else { return }
+        S02Logger.shared.log("收到 RTSP 响应:\n\(text.prefix(200))", tag: "NativeRTSP")
         
         // 提取 Session ID
         if let sRange = text.range(of: "Session:", options: .caseInsensitive) {
@@ -358,12 +363,58 @@ public class NativeRtspPlayer: NSObject, RtspPlayerProtocol {
             self.sessionId = raw.trimmingCharacters(in: .whitespaces)
         }
         
+        // 检查 461 传输不支持 (若服务端不支持 TCP interleaved，降级为 UDP 50000 端口)
+        if text.contains("461") {
+            S02Logger.shared.log("服务端不支持 TCP Interleaved，切换至 UDP (端口 50000)...", tag: "NativeRTSP")
+            startUdpListener(port: 50000)
+            cseq += 1
+            let targetTrack = trackControlUrl.isEmpty ? "\(currentUrl)/track0" : trackControlUrl
+            let req = "SETUP \(targetTrack) RTSP/1.0\r\nCSeq: \(cseq)\r\nTransport: RTP/AVP;unicast;client_port=50000-50001\r\nUser-Agent: S02LB iOS\r\n\r\n"
+            sendRaw(req)
+            return
+        }
+        
         if text.contains("Public:") || text.contains("OPTIONS") {
             sendDescribe()
         } else if text.contains("application/sdp") || text.contains("m=video") {
             parseSdpAndSetup(sdp: text)
         } else if text.contains("Transport:") || (sessionId != nil && !hasSentPlay) {
+            if text.contains("client_port=") || text.contains("server_port=") {
+                startUdpListener(port: 50000)
+            }
             sendPlay()
+        }
+    }
+    
+    private func startUdpListener(port: UInt16 = 50000) {
+        guard udpListener == nil else { return }
+        guard let nwPort = NWEndpoint.Port(rawValue: port) else { return }
+        do {
+            let params = NWParameters.udp
+            params.allowLocalEndpointReuse = true
+            let listener = try NWListener(using: params, on: nwPort)
+            listener.newConnectionHandler = { [weak self] newConn in
+                guard let self = self else { return }
+                newConn.start(queue: self.workerQueue)
+                self.receiveUdpPackets(on: newConn)
+            }
+            listener.start(queue: self.workerQueue)
+            self.udpListener = listener
+            S02Logger.shared.log("RTSP UDP 接收监听器已在端口 \(port) 启动", tag: "NativeRTSP")
+        } catch {
+            S02Logger.shared.log("启动 UDP 监听异常: \(error)", tag: "NativeRTSP")
+        }
+    }
+    
+    private func receiveUdpPackets(on conn: NWConnection) {
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] content, _, isComplete, error in
+            guard let self = self else { return }
+            if let packet = content, !packet.isEmpty {
+                self.handleRtpPacket(packet)
+            }
+            if error == nil && !isComplete {
+                self.receiveUdpPackets(on: conn)
+            }
         }
     }
     

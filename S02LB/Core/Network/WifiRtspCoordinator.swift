@@ -293,22 +293,24 @@ public final class WifiRtspCoordinator: ObservableObject {
     }
     
     private func stopRtspFlow() {
+        self.isRtspReady = false
         onStopPlayer?()
         if phase == .stopping { return }
         
-        if isStopPending || isRtspReady || phase == .streaming {
+        if isStopPending || phase == .streaming {
             begin(phase: .stopping)
             isStopPending = true
             stopConfirmed = false
             S02Logger.shared.log("下发停止 RTSP 命令 (CMD_RTSP_STOP)...", tag: "WiFiFlow")
             bleManager.send(command: .rtspStop)
         } else {
-            begin(phase: wifiWanted ? .waitAp : .waitOff)
+            begin(phase: wifiWanted ? .ready : .waitOff)
         }
     }
     
     /// 重置状态机
     public func cancel() {
+        self.isRtspReady = false
         wifiWanted = false
         rtspWanted = false
         previewWanted = false
@@ -590,15 +592,26 @@ public final class WifiRtspCoordinator: ObservableObject {
             }
         }
         
-        // 3. 监听固件上报的 RTSP 运行状态 (如 "1,261022152713")
+        // 3. 监听固件上报的 RTSP 运行状态 (如 "1,261022152713" 或 "0,261026170821")
         let rtspParts = report.rtsp.split(separator: ",")
-        if let first = rtspParts.first, first == "1" {
-            if (phase == .waitRtsp || phase == .waitAp) && rtspWanted {
-                S02Logger.shared.log("收到固件上报 RTSP 已在推流中 (rtsp=\(report.rtsp))，进入推流状态...", tag: "WiFiFlow")
-                self.isRtspReady = true
-                self.begin(phase: .streaming)
-                if self.previewWanted {
-                    self.onStartPlayer?(self.rtspUrl)
+        if let first = rtspParts.first {
+            let isRemoteStreaming = (first == "1")
+            self.isRtspReady = isRemoteStreaming
+            
+            if isRemoteStreaming {
+                if (phase == .waitRtsp || phase == .waitAp || phase == .ready) && rtspWanted {
+                    S02Logger.shared.log("收到固件上报 RTSP 已在推流中 (rtsp=\(report.rtsp))，进入推流状态...", tag: "WiFiFlow")
+                    self.begin(phase: .streaming)
+                    if self.previewWanted {
+                        self.onStartPlayer?(self.rtspUrl)
+                    }
+                }
+            } else {
+                // 固件上报 0：说明眼镜当前没有在推流
+                if phase == .streaming {
+                    S02Logger.shared.log("固件上报 RTSP 已停止推流 (rtsp=\(report.rtsp))", tag: "WiFiFlow")
+                    self.onStopPlayer?()
+                    self.begin(phase: wifiWanted ? .ready : .waitOff)
                 }
             }
         }
@@ -619,6 +632,9 @@ public final class WifiRtspCoordinator: ObservableObject {
                 } else if res == 2 { // 2 = 停止成功确认
                     S02Logger.shared.log("收到设备 RTSP 停止成功确认 (seq=\(seq))", tag: "WiFiFlow")
                     stopConfirmed = true
+                    self.isRtspReady = false
+                    self.isStopPending = false
+                    self.begin(phase: wifiWanted ? .ready : .waitOff)
                 } else if res == 3 {
                     show("设备停止 RTSP 失败", isError: true)
                 }
