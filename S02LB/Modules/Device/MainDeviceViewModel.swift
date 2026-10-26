@@ -145,6 +145,26 @@ public final class MainDeviceViewModel: ObservableObject {
         coordinator.startRtsp(url: customRtspUrlInput, preview: preview)
     }
     
+    /// 启动并预览 (对齐安卓「启动并预览」)
+    public func startRtspWithPreview() {
+        coordinator.startRtsp(url: customRtspUrlInput, preview: true)
+    }
+    
+    /// 停止画面预览 (对齐安卓「停止预览」)
+    public func stopPreview() {
+        coordinator.stopPreview()
+    }
+    
+    /// 仅打开 RTSP 推流命令，不启动画面 (对齐安卓「打开RTSP」)
+    public func openRtspOnly() {
+        coordinator.startRtsp(url: customRtspUrlInput, preview: false)
+    }
+    
+    /// 关闭 RTSP 推流 (对齐安卓「关闭RTSP」)
+    public func closeRtsp() {
+        coordinator.stopRtsp()
+    }
+    
     public func stopRtsp() {
         coordinator.stopRtsp()
     }

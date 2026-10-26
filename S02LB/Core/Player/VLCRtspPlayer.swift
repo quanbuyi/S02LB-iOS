@@ -125,69 +125,9 @@ public final class VLCRtspPlayer: NSObject, RtspPlayerProtocol, VLCMediaPlayerDe
 
 #else
 
-/// 兼容无 MobileVLCKit 二进制依赖时的仿真/轻量播放器实现
-public final class VLCRtspPlayer: NSObject, RtspPlayerProtocol {
-    
-    public var statePublisher: AnyPublisher<RtspPlaybackState, Never> {
-        stateSubject.eraseToAnyPublisher()
-    }
-    public private(set) var currentState: RtspPlaybackState = .idle {
-        didSet { stateSubject.send(currentState) }
-    }
-    
-    public let renderView: UIView = {
-        let v = UIView()
-        v.backgroundColor = .black
-        
-        let label = UILabel()
-        label.text = "S02LB RTSP 实时画面 (4:3)"
-        label.textColor = .lightGray
-        label.font = .systemFont(ofSize: 13, weight: .medium)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        v.addSubview(label)
-        
-        NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: v.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: v.centerYAnchor)
-        ])
-        return v
-    }()
-    
-    public private(set) var firstFrameLatencyMs: Int? = nil
-    
-    private let stateSubject = CurrentValueSubject<RtspPlaybackState, Never>(.idle)
-    private var currentUrl: String = ""
-    private var playTimer: Timer?
-    
-    public func play(url: String) {
-        stop()
-        self.currentUrl = url
-        self.currentState = .connecting(url)
-        S02Logger.shared.log("[Player] 开始播放 RTSP 地址: \(url)", tag: "RTSPPlayer")
-        
-        let start = Date()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard let self = self else { return }
-            let latency = Int(Date().timeIntervalSince(start) * 1000)
-            self.firstFrameLatencyMs = latency
-            self.currentState = .playing(url: url, latencyMs: latency)
-            S02Logger.shared.log("★ RTSP 首帧出图耗时: \(latency) ms (已按低延迟策略渲染)", tag: "RTSPPlayer")
-        }
-    }
-    
-    public func stop() {
-        playTimer?.invalidate()
-        playTimer = nil
-        self.currentState = .idle
-        S02Logger.shared.log("[Player] 停止 RTSP 播放", tag: "RTSPPlayer")
-    }
-    
-    public func pause() {
-        self.currentState = .buffering
-    }
-    
-    public func resume() {
-        self.currentState = .playing(url: currentUrl, latencyMs: firstFrameLatencyMs)
-    }
+/// 兼容无 MobileVLCKit 二进制依赖时，直接采用原生高性能 NativeRtspPlayer (VideoToolbox 硬解 + AVSampleBufferDisplayLayer)
+public final class VLCRtspPlayer: NativeRtspPlayer {
+    // 继承 NativeRtspPlayer 的全部功能，无需任何第三方框架依赖即可直接渲染真实画面
 }
+
 #endif

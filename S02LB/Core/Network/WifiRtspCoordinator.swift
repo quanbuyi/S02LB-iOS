@@ -118,6 +118,7 @@ public final class WifiRtspCoordinator: ObservableObject {
         
         // 监听热点管理器 Wi-Fi 物理连接状态
         hotspotManager.$isWifiActive
+            .removeDuplicates()
             .sink { [weak self] isActive in
                 guard let self = self else { return }
                 self.isWifiConnected = isActive
@@ -242,6 +243,16 @@ public final class WifiRtspCoordinator: ObservableObject {
         previewWanted = preview
         generation += 1
         
+        // 若此时固件已经在推流 (isRtspReady == true) 且物理网络已就绪，直接进入 streaming 状态并启动拉流
+        if isRtspReady && hotspotManager.isTargetHotspotConnected {
+            S02Logger.shared.log("固件 RTSP 服务已就绪，立即进入 streaming 状态", tag: "WiFiFlow")
+            begin(phase: .streaming)
+            if previewWanted {
+                onStartPlayer?(self.rtspUrl)
+            }
+            return
+        }
+        
         // 若此时热点物理链路已经连通 (isTargetHotspotConnected == true)
         if hotspotManager.isTargetHotspotConnected {
             S02Logger.shared.log("热点物理链路已就绪，立即进入等待推流状态并下发 CMD_RTSP_START...", tag: "WiFiFlow")
@@ -272,6 +283,13 @@ public final class WifiRtspCoordinator: ObservableObject {
         rtspWanted = false
         previewWanted = false
         stopRtspFlow()
+    }
+    
+    /// 仅停止客户端播放器预览拉流，保持固件推流与 Wi-Fi 连接
+    public func stopPreview() {
+        previewWanted = false
+        onStopPlayer?()
+        S02Logger.shared.log("已停止本地视频画面预览 (固件 RTSP 保持推流)", tag: "WiFiFlow")
     }
     
     private func stopRtspFlow() {

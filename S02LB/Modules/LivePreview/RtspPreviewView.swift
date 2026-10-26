@@ -61,7 +61,7 @@ public struct RtspPreviewView: View {
                 Text("未启动视频预览")
                     .font(.caption)
                     .foregroundColor(.gray)
-                Text("点击上方「启动推流」拉取眼镜实时画面")
+                Text("点击上方「启动并预览」拉取眼镜实时画面")
                     .font(.caption2)
                     .foregroundColor(.gray.opacity(0.8))
             }

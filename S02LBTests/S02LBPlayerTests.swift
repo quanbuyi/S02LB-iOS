@@ -29,4 +29,24 @@ final class S02LBPlayerTests: XCTestCase {
         XCTAssertEqual(RtspPlaybackState.buffering.description, "缓冲中...")
         XCTAssertEqual(RtspPlaybackState.error("网络超时").description, "播放错误: 网络超时")
     }
+    
+    func testNativeRtspPlayerInitAndRenderView() {
+        let nativePlayer = NativeRtspPlayer()
+        XCTAssertEqual(nativePlayer.currentState, .idle)
+        XCTAssertNotNil(nativePlayer.renderView)
+        XCTAssertTrue(nativePlayer.renderView is SampleBufferVideoView)
+        
+        let testUrl = "192.168.43.1:554/6600"
+        nativePlayer.play(url: testUrl)
+        
+        // 验证自动补全 rtsp://
+        if case .connecting(let url) = nativePlayer.currentState {
+            XCTAssertEqual(url, "rtsp://192.168.43.1:554/6600")
+        } else {
+            XCTFail("NativeRtspPlayer 应处于 connecting 状态")
+        }
+        
+        nativePlayer.stop()
+        XCTAssertEqual(nativePlayer.currentState, .idle)
+    }
 }

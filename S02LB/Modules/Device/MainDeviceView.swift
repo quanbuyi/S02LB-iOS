@@ -324,7 +324,7 @@ public struct MainDeviceView: View {
                         .disableAutocorrection(true)
                 }
                 
-                // 控制按钮行
+                // 1. Wi-Fi 物理热点控制
                 HStack(spacing: 10) {
                     Button(action: {
                         viewModel.startWifiAp()
@@ -345,20 +345,42 @@ public struct MainDeviceView: View {
                     .controlSize(.small)
                 }
                 
+                // 2. 视频实时预览控制 (对齐安卓「启动并预览」/「停止预览」)
                 HStack(spacing: 10) {
                     Button(action: {
-                        viewModel.startRtsp()
+                        viewModel.startRtspWithPreview()
                     }) {
-                        Label("启动推流", systemImage: "play.circle.fill")
+                        Label("启动并预览", systemImage: "play.circle.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     
                     Button(action: {
-                        viewModel.stopRtsp()
+                        viewModel.stopPreview()
                     }) {
-                        Label("停止推流", systemImage: "stop.circle.fill")
+                        Label("停止预览", systemImage: "stop.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                
+                // 3. 底层推流指令控制 (对齐安卓「打开RTSP」/「关闭RTSP」)
+                HStack(spacing: 10) {
+                    Button(action: {
+                        viewModel.openRtspOnly()
+                    }) {
+                        Label("打开RTSP", systemImage: "bolt.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    
+                    Button(action: {
+                        viewModel.closeRtsp()
+                    }) {
+                        Label("关闭RTSP", systemImage: "bolt.slash.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
